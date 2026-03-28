@@ -5,12 +5,6 @@
 ## 📁 Project Documentation
 The core architectural and design specifications are stored in the `docs/` folder:
 
-1. [PRD — Product Requirements Document](file:///d:/DNA(Desktop Assistant)/docs/PRD.md)
-2. [System Design Document](file:///d:/DNA(Desktop Assistant)/docs/System_Design.md)
-3. [UI/UX Wireframes](file:///d:/DNA(Desktop Assistant)/docs/UI_UX_Wireframes.md)
-4. [Feature Breakdown Document](file:///d:/DNA(Desktop Assistant)/docs/Feature_Breakdown.md)
-5. [Master Prompt Document](file:///d:/DNA(Desktop Assistant)/docs/Master_Prompt.md)
-
 ## 🛠️ Technology Stack
 - **STT:** `faster-whisper`
 - **LLM:** `Qwen3.5:2b` via Ollama
