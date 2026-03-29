@@ -34,6 +34,7 @@
 - **[2026-03-29]**: Phase 4 integration started. Added `pipeline/llm_agent.py`, wired LLM fallback in `pipeline/intent_router.py`, and added Ollama tuning settings in `config.py`.
 - **[2026-03-29]**: Phase 4 marked complete. Activated Phase 5 for SQLite memory and command logging implementation.
 - **[2026-03-29]**: Added `test_phase4.py` for deterministic Phase 4 fallback validation (7/7 passed). Live Ollama smoke check auto-skips when Ollama is offline.
+- **[2026-03-29]**: Extensive structural hardening and debugging. Added `threading.Lock()` to Whisper/Piper initializers, migrated `wait_for_wake_word` to `threading.Event()`, added robust atomic file download capabilities (`shutil.copyfileobj`). Patched `shell=True` vulnerabilities across `system_skill.py` and improved punctuation retention in LLM fuzzy corrections. Added cross-platform fallbacks for `os.startfile`.
 
 ## 📂 Files Created in Phase 2
 - `dna_main.py` — Entry point, main Wake→Listen→Route→Speak loop

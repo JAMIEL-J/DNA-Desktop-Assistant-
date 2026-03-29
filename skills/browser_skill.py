@@ -13,11 +13,12 @@ def open_url(url: str) -> str:
     """Open a URL in the default browser."""
     try:
         # Ensure url has a scheme
-        target = url.lower().strip()
-        if not (target.startswith('http://') or target.startswith('https://')):
-            target = 'https://' + target
+        preserved_url = url.strip()
+        scheme_check = preserved_url.lower()
+        if not (scheme_check.startswith('http://') or scheme_check.startswith('https://')):
+            preserved_url = 'https://' + preserved_url
             
-        webbrowser.open(target)
+        webbrowser.open(preserved_url)
         return f'Opening {url}.'
     except Exception as e:
         logger.error('open_url failed: %s', e)

@@ -149,28 +149,36 @@ def media_previous() -> str:
 def open_app(app_name: str) -> str:
     """Open an application by name."""
     try:
+        import re
         name = app_name.lower().strip()
+        if re.search(r'[&|;<>\'"]', name):
+            return "Application name contains invalid characters."
+
         executable = APP_ALIASES.get(name)
 
         if executable:
-            if executable.startswith('ms-settings'):
+            if hasattr(os, 'startfile'):
                 os.startfile(executable)
             else:
                 subprocess.Popen(
-                    executable,
-                    shell=True,
+                    [executable],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
             return f'Opening {app_name}.'
         else:
             # Try opening via Windows search / start menu
-            subprocess.Popen(
-                f'start "" "{name}"',
-                shell=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+            if hasattr(os, 'startfile'):
+                os.startfile(name)
+            else:
+                import shutil
+                resolved = shutil.which(name)
+                if resolved:
+                    subprocess.Popen(
+                        [resolved],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
             return f'Trying to open {app_name}.'
 
     except Exception as e:
@@ -240,6 +248,9 @@ def shutdown_computer(delay: str = '60') -> str:
     """Schedule a shutdown with a delay in seconds."""
     try:
         seconds = int(delay)
+        if seconds < 0:
+            logger.error('Invalid shutdown delay: %d', seconds)
+            return 'Delay must be a non-negative number.'
         subprocess.run(
             ['shutdown', '/s', '/t', str(seconds)],
             check=True,
@@ -264,6 +275,9 @@ def restart_computer(delay: str = '60') -> str:
     """Schedule a restart with a delay in seconds."""
     try:
         seconds = int(delay)
+        if seconds < 0:
+            logger.error('Invalid restart delay: %d', seconds)
+            return 'Delay must be a non-negative number.'
         subprocess.run(
             ['shutdown', '/r', '/t', str(seconds)],
             check=True,

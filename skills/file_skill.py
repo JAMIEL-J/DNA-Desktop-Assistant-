@@ -1,5 +1,7 @@
 # 1. stdlib
 import os
+import sys
+import subprocess
 import logging
 from pathlib import Path
 
@@ -122,7 +124,12 @@ def open_folder(directory: str) -> str:
         if target is None:
             return display
 
-        os.startfile(target)
+        if sys.platform == 'win32':
+            os.startfile(target)
+        elif sys.platform == 'darwin':
+            subprocess.run(['open', target])
+        else:
+            subprocess.run(['xdg-open', target])
         return f'Opening your {display} folder.'
 
     except Exception as e:

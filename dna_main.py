@@ -39,14 +39,14 @@ def main():
     while True:
         try:
             # Step 1: Wait for wake word
-            update('is_listening', True)
+            update('is_listening', False)
             detected = wait_for_wake_word()
 
             if not detected:
                 continue
 
             # Step 2: Play acknowledgment and record command
-            update('is_listening', False)
+            update('is_listening', True)
             speak('Yes?')
 
             audio = listen_and_record()
@@ -66,7 +66,7 @@ def main():
             # Step 4: Route to tool
             result = route(text)
 
-            if result is None:
+            if not result or not result.strip():
                 speak('I could not process that command. Please try again.')
                 continue
 

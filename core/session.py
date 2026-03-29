@@ -19,7 +19,7 @@ def update(key: str, value) -> None:
     """Thread-safe state update."""
     with _lock:
         _state[key] = value
-        logger.debug('Session update: %s = %s', key, repr(value)[:80])
+        logger.debug('Session update: %s', key)
 
 
 def get(key: str, default=None):

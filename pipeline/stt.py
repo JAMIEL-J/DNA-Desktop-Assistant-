@@ -3,6 +3,7 @@ import logging
 import re
 import time
 from difflib import get_close_matches
+import threading
 
 # 2. third-party
 import numpy as np
@@ -15,6 +16,7 @@ logger = logging.getLogger('dna.stt')
 
 # Lazy-loaded singleton — avoid loading the model until first use
 _model = None
+_model_lock = threading.Lock()
 
 # Vocabulary prompt — primes Whisper to expect these words
 WHISPER_PROMPT = (
@@ -147,7 +149,7 @@ def _correct_transcription(text: str) -> str:
             matches = get_close_matches(clean, _KNOWN_WORDS, n=1, cutoff=0.7)
             if matches:
                 logger.debug('Fuzzy corrected: "%s" → "%s"', clean, matches[0])
-                result.append(matches[0])
+                result.append(word.replace(clean, matches[0]))
             else:
                 result.append(word)
         else:
@@ -160,15 +162,17 @@ def _get_model():
     """Load the Whisper model once and cache it."""
     global _model
     if _model is None:
-        logger.info('Loading Whisper model: %s (compute=%s, device=%s)',
-                     WHISPER_MODEL, WHISPER_COMPUTE_TYPE, WHISPER_DEVICE)
-        start = time.time()
-        _model = WhisperModel(
-            WHISPER_MODEL,
-            device=WHISPER_DEVICE,
-            compute_type=WHISPER_COMPUTE_TYPE,
-        )
-        logger.info('Whisper model loaded in %.2fs', time.time() - start)
+        with _model_lock:
+            if _model is None:
+                logger.info('Loading Whisper model: %s (compute=%s, device=%s)',
+                             WHISPER_MODEL, WHISPER_COMPUTE_TYPE, WHISPER_DEVICE)
+                start = time.time()
+                _model = WhisperModel(
+                    WHISPER_MODEL,
+                    device=WHISPER_DEVICE,
+                    compute_type=WHISPER_COMPUTE_TYPE,
+                )
+                logger.info('Whisper model loaded in %.2fs', time.time() - start)
     return _model
 
 

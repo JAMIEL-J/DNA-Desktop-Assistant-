@@ -2,6 +2,7 @@
 import logging
 import re
 import subprocess
+from typing import Optional
 
 # 2. internal
 from pipeline.llm_agent import handle_complex_command
@@ -175,7 +176,7 @@ _EXTENDED_TOOLS = {
 }
 
 
-def route(command: str, allow_llm: bool = True) -> str:
+def route(command: str, allow_llm: bool = True) -> Optional[str]:
     """Route a voice command to the appropriate tool."""
     if not command or not command.strip():
         return None

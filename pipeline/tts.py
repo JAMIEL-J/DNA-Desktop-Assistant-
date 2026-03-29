@@ -5,7 +5,8 @@ import logging
 import time
 import wave
 from pathlib import Path
-from urllib.request import urlretrieve
+import urllib.request
+import threading
 
 # 2. third-party
 import numpy as np
@@ -31,6 +32,7 @@ _JSON_URL = f'{_HF_BASE}/{_LANG_SHORT}/{_LANG_CODE}/{_SPEAKER}/{_QUALITY}/{PIPER
 
 # Lazy-loaded Piper synthesizer
 _synthesizer = None
+_synth_lock = threading.Lock()
 
 
 def _download_voice_model():
@@ -40,28 +42,49 @@ def _download_voice_model():
     if not PIPER_MODEL_PATH.exists():
         logger.info('Downloading Piper voice model: %s', PIPER_VOICE)
         logger.info('URL: %s', _MODEL_URL)
-        urlretrieve(_MODEL_URL, str(PIPER_MODEL_PATH))
+        _robust_download(_MODEL_URL, PIPER_MODEL_PATH)
         logger.info('Downloaded: %s', PIPER_MODEL_PATH.name)
 
     if not PIPER_MODEL_JSON.exists():
         logger.info('Downloading Piper voice config: %s.json', PIPER_VOICE)
-        urlretrieve(_JSON_URL, str(PIPER_MODEL_JSON))
+        _robust_download(_JSON_URL, PIPER_MODEL_JSON)
         logger.info('Downloaded: %s', PIPER_MODEL_JSON.name)
+
+
+def _robust_download(url: str, dest_path: Path):
+    import urllib.request
+    import shutil
+    temp_path = dest_path.with_suffix('.tmp')
+    try:
+        with urllib.request.urlopen(url, timeout=30.0) as response, open(temp_path, 'wb') as out_file:
+            shutil.copyfileobj(response, out_file)
+        # atomic rename
+        temp_path.replace(dest_path)
+    except Exception as e:
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+        logger.error('Download failed for %s: %s', url, e)
+        raise e
 
 
 def _get_synthesizer():
     """Load the Piper synthesizer once and cache it."""
     global _synthesizer
     if _synthesizer is None:
-        _download_voice_model()
-
-        logger.info('Loading Piper TTS model: %s', PIPER_VOICE)
-        start = time.time()
-
-        from piper import PiperVoice
-        _synthesizer = PiperVoice.load(str(PIPER_MODEL_PATH))
-
-        logger.info('Piper TTS loaded in %.2fs', time.time() - start)
+        with _synth_lock:
+            if _synthesizer is None:
+                _download_voice_model()
+        
+                logger.info('Loading Piper TTS model: %s', PIPER_VOICE)
+                start = time.time()
+        
+                from piper import PiperVoice
+                _synthesizer = PiperVoice.load(str(PIPER_MODEL_PATH))
+        
+                logger.info('Piper TTS loaded in %.2fs', time.time() - start)
     return _synthesizer
 
 

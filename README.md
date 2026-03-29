@@ -10,3 +10,4 @@ The core architectural and design specifications are stored in the `docs/` folde
 - **LLM:** `Qwen3.5:2b` via Ollama
 - **TTS:** `Piper`
 - **Database:** DuckDB & SQLite
+- **Audio Control:** `pycaw` (Explicitly conditional on `sys_platform == "win32"` in requirements to ensure compatibility guarantees).
