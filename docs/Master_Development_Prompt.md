@@ -1,5 +1,5 @@
 # DNA — Master Development Prompt
-# DNA — Master Development Prompt
+
 
 > **How to use this:** Copy this entire page and paste it at the start of every AI coding session for DNA. Update the `[CURRENT PHASE]` and `[CURRENT TASK]` lines before pasting. Everything else stays fixed.
 > 
@@ -16,11 +16,15 @@ Owner     : Jamiel J. — single user, personal tool
 Hardware  : Intel i3-1134G4 (or N305 class), 8GB RAM, no GPU, Intel UHD 128MB
 Repo      : github.com/JAMIEL-J/DNA-Voice-Assistant
 
-Current Phase : [REPLACE THIS — e.g. Phase 3: Intent Router]
-Current Task  : [REPLACE THIS — one sentence describing what you're building today]
+Current Phase : Phase 5: SQLite Memory + Command Logging
+Current Task  : Adding SQLite tables and mandatory command/failure logging across the runtime.
 ```
 
 **What DNA does:**
+
+| Phase | Description | Status |
+| --- | --- | --- |
+| 1 | STT + TTS pipeline end-to-end | [x] |
 
 Listens for a wake word → transcribes your voice command → routes it through an intent system → executes a tool (open app, analyse data, control system, read screen, etc.) → speaks the result back.
 
@@ -466,11 +470,11 @@ Never auto-execute. Always confirm with user before saving a skill snippet.
 
 | Phase | Goal | Status |
 | --- | --- | --- |
-| 1 | STT + TTS pipeline end-to-end | [ ] |
-| 2 | Wake word + system commands (open/volume/media) | [ ] |
-| 3 | Intent router — all simple commands without LLM | [ ] |
-| 4 | LLM agent — complex file and DA commands | [ ] |
-| 5 | SQLite memory + command logging | [ ] |
+| 1 | STT + TTS pipeline end-to-end | [x] |
+| 2 | Wake word + system commands (open/volume/media) | [x] |
+| 3 | Intent router — all simple commands without LLM | [x] |
+| 4 | LLM agent — complex file and DA commands | [x] |
+| 5 | SQLite memory + command logging | [/] |
 | 6 | Session state + pronoun resolution (v2) | [ ] |
 | 7 | Plan executor — multi-step commands (v2) | [ ] |
 | 8 | Skill registry — auto-discovery (v2) | [ ] |
@@ -482,3 +486,14 @@ Never auto-execute. Always confirm with user before saving a skill snippet.
 | 14 | Stability, edge cases, error hardening | [ ] |
 
 > Update [ ] to [x] as phases complete. Update `Current Phase` at the top of this prompt before each session.
+
+## PHASE 4 COMPLETION NOTES (2026-03-29)
+
+- Added `pipeline/llm_agent.py` for Ollama fallback routing.
+- Added per-task thinking mode router (`needs_thinking`) with default `think=False`.
+- Added JSON cleaning/parsing fallback for markdown-wrapped LLM output.
+- Wired `pipeline/intent_router.py` fallback path for non-regex commands.
+- Added `allow_llm` switch in `route()` so regex tests can run deterministically.
+- Added Ollama tuning constants in `config.py` (`OLLAMA_TIMEOUT`, `OLLAMA_CTX_NORMAL`, `OLLAMA_CTX_THINKING`, `OLLAMA_TEMPERATURE`).
+- Updated `.env.example` for the new Ollama settings.
+- Regression tested routing: `test_phase2.py` passed (23 out of 23).

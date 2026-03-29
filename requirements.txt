@@ -1,0 +1,29 @@
+# DNA V1 Requirements
+
+# Core Audio & Wake Word
+openwakeword==0.6.0
+sounddevice>=0.4.6
+numpy>=1.24.0
+
+# Speech-to-Text
+faster-whisper>=1.0.0
+
+# System Control
+pyautogui>=0.9.54
+pygetwindow>=0.0.9
+pycaw>=0.0.1
+psutil>=5.9.0
+
+
+# Data Science V1
+pandas>=2.0.0
+duckdb>=0.9.0
+
+# Logic & Networking
+requests>=2.31.0
+python-dotenv>=1.0.1
+
+# TTS (Piper is handled via Python wrapper)
+piper-tts>=1.2.0
+onnxruntime>=1.15.0
+
