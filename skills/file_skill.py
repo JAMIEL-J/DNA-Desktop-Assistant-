@@ -127,9 +127,9 @@ def open_folder(directory: str) -> str:
         if sys.platform == 'win32':
             os.startfile(target)
         elif sys.platform == 'darwin':
-            subprocess.run(['open', target])
+            subprocess.run(['open', target], check=True)
         else:
-            subprocess.run(['xdg-open', target])
+            subprocess.run(['xdg-open', target], check=True)
         return f'Opening your {display} folder.'
 
     except Exception as e:

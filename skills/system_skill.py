@@ -170,6 +170,7 @@ def open_app(app_name: str) -> str:
             # Try opening via Windows search / start menu
             if hasattr(os, 'startfile'):
                 os.startfile(name)
+                return f'Trying to open {app_name}.'
             else:
                 import shutil
                 resolved = shutil.which(name)
@@ -179,7 +180,9 @@ def open_app(app_name: str) -> str:
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
                     )
-            return f'Trying to open {app_name}.'
+                    return f'Trying to open {app_name}.'
+                else:
+                    return f'Could not find executable for {app_name}.'
 
     except Exception as e:
         logger.error('open_app failed: %s', e)
