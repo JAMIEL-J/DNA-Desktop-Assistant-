@@ -17,21 +17,42 @@ from config import (
 logger = logging.getLogger('dna.wake')
 
 _oww_model = None
+_model_load_failed = False
+_model_load_attempts = 0
+_MAX_MODEL_RETRIES = 5
 
 
 def _get_model():
     """Load the OpenWakeWord model once and cache it."""
-    global _oww_model
-    if _oww_model is None:
-        logger.info('Loading wake word model: %s (framework=%s)',
-                     WAKE_WORD_MODEL, WAKE_WORD_FRAMEWORK)
+    global _oww_model, _model_load_failed, _model_load_attempts
+    if _oww_model is not None:
+        return _oww_model
+    if _model_load_failed:
+        return None
+
+    _model_load_attempts += 1
+    logger.info('Loading wake word model: %s (framework=%s) [attempt %d/%d]',
+                 WAKE_WORD_MODEL, WAKE_WORD_FRAMEWORK,
+                 _model_load_attempts, _MAX_MODEL_RETRIES)
+    try:
         start = time.time()
         _oww_model = Model(
             wakeword_models=[WAKE_WORD_MODEL],
             inference_framework=WAKE_WORD_FRAMEWORK,
         )
         logger.info('Wake word model loaded in %.2fs', time.time() - start)
-    return _oww_model
+        return _oww_model
+    except Exception as e:
+        logger.error('Failed to load wake word model: %s', e)
+        if _model_load_attempts >= _MAX_MODEL_RETRIES:
+            logger.error('Max retries (%d) exceeded. Wake word disabled until restart.',
+                         _MAX_MODEL_RETRIES)
+            _model_load_failed = True
+        else:
+            backoff = min(2 ** _model_load_attempts, 30)
+            logger.info('Retrying in %ds...', backoff)
+            time.sleep(backoff)
+        return None
 
 
 def wait_for_wake_word(timeout: float = None) -> bool:
@@ -45,6 +66,8 @@ def wait_for_wake_word(timeout: float = None) -> bool:
     """
     try:
         model = _get_model()
+        if model is None:
+            return False
         event = threading.Event()
         start_time = time.time()
 

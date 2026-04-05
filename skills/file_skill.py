@@ -1,3 +1,9 @@
+# skills/file_skill.py
+# ──────────────────────────────────────────────────────────────────────
+# File-system tools: list files, open folders
+# v2 — Safety-hardened: blocks access to protected OS paths
+# ──────────────────────────────────────────────────────────────────────
+
 # 1. stdlib
 import os
 import sys
@@ -7,6 +13,7 @@ from pathlib import Path
 
 # 2. internal
 from config import FOLDER_ALIASES
+from core.safety import is_path_protected
 
 logger = logging.getLogger('dna.skill.file')
 
@@ -23,39 +30,49 @@ _FOLDER_VARIANTS = {
 
 def _resolve_folder(name: str) -> tuple:
     """Resolve a spoken folder name to an actual Path.
-    
+
     Checks config.FOLDER_ALIASES for mappings.
+    Blocks access to protected system paths.
     """
     original_name = name.strip()
     clean = original_name.lower()
-    
+
+    # ── Safety: block obvious system path attempts ──
+    if is_path_protected(original_name):
+        logger.warning('BLOCKED: Attempt to access protected path: %s', original_name)
+        return None, (
+            f'I cannot access "{original_name}" — it is a protected system path. '
+            'This restriction keeps your operating system safe.'
+        )
+
     # Check for direct alias (case-insensitive)
     path = FOLDER_ALIASES.get(clean)
-    
+
     # Try common variants if not found
     if not path and clean in _FOLDER_VARIANTS:
         path = FOLDER_ALIASES.get(_FOLDER_VARIANTS[clean])
-        
+
     if not path:
-        # Recursive Search (Depth 2): Look for a subfolder with this name deeper in common bases
+        # Recursive Search (Depth 2): Look for a subfolder with this name
         # We limit depth to 2 to keep it fast on i3 CPUs
         search_bases = [Path.home(), Path.home() / 'Desktop', Path.home() / 'Documents']
         for base in search_bases:
-            if not base.exists(): continue
+            if not base.exists():
+                continue
             try:
                 # Level 1: Check EXACT match first (case-sensitive)
                 exact_path = base / original_name
                 if exact_path.is_dir():
                     path = exact_path
                     break
-                
+
                 # Level 1: Check CASE-INSENSITIVE scan
                 for item in base.iterdir():
                     if item.is_dir():
                         if item.name.lower() == clean:
                             path = item
                             break
-                        
+
                         # Level 2 scan (one level deeper)
                         try:
                             # Level 2: Exact check
@@ -63,7 +80,7 @@ def _resolve_folder(name: str) -> tuple:
                             if sub_exact.is_dir():
                                 path = sub_exact
                                 break
-                                
+
                             # Level 2: Case-insensitive scan
                             for sub_item in item.iterdir():
                                 if sub_item.is_dir() and sub_item.name.lower() == clean:
@@ -71,17 +88,31 @@ def _resolve_folder(name: str) -> tuple:
                                     break
                         except PermissionError:
                             continue
-                    if path: break
-                if path: break
+                    if path:
+                        break
+                if path:
+                    break
             except PermissionError:
                 continue
 
     if not path:
-        return None, f"I couldn't find a folder called {name} in your user profile (searching up to 2 levels deep). You can add it to config.py for direct access."
+        return None, (
+            f"I couldn't find a folder called {name} in your user profile "
+            "(searching up to 2 levels deep). You can add it to config.py for direct access."
+        )
 
     target = Path(path)
+
+    # ── Safety: validate resolved path isn't protected ──
+    if is_path_protected(target):
+        logger.warning('BLOCKED: Resolved path is protected: %s', target)
+        return None, (
+            f'The folder "{name}" resolved to a protected system location. '
+            'I cannot open it for safety reasons.'
+        )
+
     if not target.exists():
-        return None, f"The folder at {path} does not exist."
+        return None, f'The folder at {path} does not exist.'
 
     return target, target.name
 

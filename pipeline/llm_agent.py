@@ -1,3 +1,9 @@
+# pipeline/llm_agent.py
+# ──────────────────────────────────────────────────────────────────────
+# LLM Agent — Routes complex commands through Ollama
+# v2 — Safety-hardened: blocks dangerous tools, sanitises LLM output
+# ──────────────────────────────────────────────────────────────────────
+
 # 1. stdlib
 import inspect
 import json
@@ -16,6 +22,12 @@ from config import (
     OLLAMA_TEMPERATURE,
     OLLAMA_TIMEOUT,
     OLLAMA_URL,
+)
+from core.safety import (
+    is_tool_blocked,
+    is_tool_dangerous,
+    is_command_dangerous,
+    get_danger_warning,
 )
 
 logger = logging.getLogger('dna.llm')
@@ -68,19 +80,64 @@ def _parse_llm_json(raw: str) -> dict[str, Any]:
 
 
 def _build_system_prompt(tool_names: list[str]) -> str:
-    """Build strict JSON prompt for single-tool or small plan outputs."""
+    """Build strict JSON prompt for single-tool or small plan outputs.
+
+    The safety layer adds explicit instructions to NEVER attempt
+    file deletion, system modification, or format operations.
+    """
     tools = ', '.join(sorted(tool_names))
     return (
         'You are DNA, an offline Windows 11 desktop assistant. '
-        'Reply with JSON only and no markdown. '\
-        'Valid outputs: '\
-        '{"tool":"tool_name","args":{...}} or '\
-        '{"plan":[{"tool":"tool_name","args":{},"use_prev_result":false}]}. '\
-        'Use only available tools. If unclear, return '\
-        '{"tool":"clarify","args":{"question":"Your short clarification question."}}. '\
-        'If nothing fits, return {"tool":"unknown","args":{}}. '\
+        'Reply with JSON only and no markdown. '
+        'Valid outputs: '
+        '{"tool":"tool_name","args":{...}} or '
+        '{"plan":[{"tool":"tool_name","args":{},"use_prev_result":false}]}. '
+        'Use only available tools. If unclear, return '
+        '{"tool":"clarify","args":{"question":"Your short clarification question."}}. '
+        'If nothing fits, return {"tool":"unknown","args":{}}. '
+        '\n\n'
+        '⚠️ SAFETY RULES (NEVER violate these):\n'
+        '1. NEVER attempt to delete, format, or modify system files.\n'
+        '2. NEVER use shutdown_computer or restart_computer unless the user explicitly asks.\n'
+        '3. NEVER construct shell commands, paths, or scripts.\n'
+        '4. If unsure about the user intent, choose "clarify" instead of guessing.\n'
+        '5. Only use tools from the list below.\n'
+        '\n'
         f'Available tools: {tools}.'
     )
+
+
+def _validate_tool_safety(tool_name: str, args: dict[str, Any]) -> str | None:
+    """Check if a tool call from the LLM is safe to execute.
+
+    Returns None if safe, or a warning/block message if not.
+    """
+    # Absolute block — tool must never run
+    if is_tool_blocked(tool_name):
+        logger.critical('BLOCKED: LLM tried to invoke blocked tool: %s', tool_name)
+        return (
+            f'I cannot execute "{tool_name}" — it is blocked for safety reasons. '
+            'This action could damage your system.'
+        )
+
+    # Dangerous tool — needs confirmation (handled by confirmation flow)
+    if is_tool_dangerous(tool_name):
+        logger.warning('DANGEROUS: LLM invoked dangerous tool: %s', tool_name)
+        return get_danger_warning(tool_name)
+
+    # Check if any string argument looks like a dangerous command
+    for key, value in (args or {}).items():
+        if isinstance(value, str) and is_command_dangerous(value):
+            logger.critical(
+                'BLOCKED: Dangerous command in arg %s of tool %s: %s',
+                key, tool_name, value[:100]
+            )
+            return (
+                'I detected a potentially dangerous command and blocked it '
+                'for your safety. Please try a different approach.'
+            )
+
+    return None  # Safe!
 
 
 def _call_ollama(command: str, tool_names: list[str]) -> dict[str, Any]:
@@ -111,11 +168,33 @@ def _call_ollama(command: str, tool_names: list[str]) -> dict[str, Any]:
     raw = _extract_message_content(payload)
     if not raw:
         return {'tool': 'unknown', 'args': {}}
-    return _parse_llm_json(raw)
+
+    decision = _parse_llm_json(raw)
+
+    # ── Validate the tool name against available tools ──
+    plan = decision.get('plan')
+    if plan and isinstance(plan, list):
+        for step in plan:
+            step_tool = str(step.get('tool', '')).strip()
+            if step_tool and step_tool not in tool_names and step_tool not in ('clarify', 'unknown'):
+                logger.warning('LLM hallucinated tool "%s" — not in available tools', step_tool)
+                return {'tool': 'unknown', 'args': {}}
+    else:
+        dec_tool = str(decision.get('tool', '')).strip()
+        if dec_tool and dec_tool not in tool_names and dec_tool not in ('clarify', 'unknown'):
+            logger.warning('LLM hallucinated tool "%s" — not in available tools', dec_tool)
+            return {'tool': 'unknown', 'args': {}}
+
+    return decision
 
 
 def _invoke_tool(tool_name: str, args: dict[str, Any], tool_map: dict[str, Any]) -> str:
     """Execute one tool safely with filtered keyword arguments."""
+    # ── Safety gate ──
+    safety_msg = _validate_tool_safety(tool_name, args)
+    if safety_msg:
+        return safety_msg
+
     tool_fn = tool_map.get(tool_name)
     if not tool_fn:
         return f'I could not find the tool named {tool_name}.'
@@ -140,6 +219,14 @@ def _execute_plan(plan: list[dict[str, Any]], tool_map: dict[str, Any]) -> str:
     """Execute a small JSON plan sequentially and return a spoken summary."""
     if not plan:
         return 'I could not build a valid plan for that.'
+
+    # ── Pre-validate entire plan before executing anything ──
+    for step in plan:
+        tool_name = str(step.get('tool', 'unknown')).strip()
+        args = step.get('args') or {}
+        safety_msg = _validate_tool_safety(tool_name, args)
+        if safety_msg:
+            return safety_msg
 
     previous_result = ''
     results: list[str] = []
@@ -182,7 +269,9 @@ def handle_complex_command(command: str, tool_map: dict[str, Any]) -> str:
         return 'The language model took too long to respond. Please try again.'
     except requests.exceptions.HTTPError as e:
         status = e.response.status_code if e.response is not None else 'unknown'
-        return f'Ollama returned an HTTP {status} error. Please check the model and service.'
+        text = e.response.text if e.response is not None else 'No response content'
+        logger.error('Ollama HTTP error %s: %s', status, text)
+        return f'Ollama returned an HTTP {status} error. This often means the model "{OLLAMA_MODEL}" is not downloaded or the model service is misconfigured.'
     except Exception as e:
         logger.error('Complex command handling failed: %s', e, exc_info=True)
         return f'Could not complete that: {str(e)}'

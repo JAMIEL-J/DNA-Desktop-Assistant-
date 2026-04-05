@@ -182,6 +182,82 @@ result = route(command, allow_llm=False)
 - Ran `python test_phase2.py` after fixes.
 - **Result**: `23 passed, 0 failed out of 23`.
 
+---
+
+## Crash Fix & Safety Hardening (2026-04-05)
+
+### ✅ RESOLVED: Black Screen / UI Crash on App Close
+- **Symptom**: Opening apps through DNA (especially UWP/shell apps like Claude, WhatsApp, Antigravity) and then closing them left a black screen. The DNA console/window appeared to crash.
+- **Cause**: `subprocess.Popen()` was called without process creation flags. Child processes inherited DNA's console window handle. When the child app closed, it destroyed the shared window, leaving a black/dead console.
+- **Fix**: Added Win32 process creation flags to all `Popen` calls in `system_skill.py`:
+
+```python
+# Before (broken)
+subprocess.Popen([executable], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+# After (fixed)
+DETACHED_PROCESS = 0x00000008
+CREATE_NEW_PROCESS_GROUP = 0x00000200
+subprocess.Popen(
+    [executable],
+    stdin=subprocess.DEVNULL,
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+    creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+    close_fds=True,
+    start_new_session=True,
+)
+```
+
+### ✅ RESOLVED: Console Flash on subprocess.run
+- **Symptom**: Running `taskkill`, `shutdown`, brightness PowerShell commands briefly flashed a console window.
+- **Cause**: `subprocess.run()` without `creationflags` opens a visible console for the child.
+- **Fix**: Added `creationflags=CREATE_NO_WINDOW` (0x08000000) to all `subprocess.run()` calls.
+
+### ✅ RESOLVED: Abrupt App Close Leaving Orphan Windows
+- **Symptom**: `taskkill /F` (force-kill) as the first approach caused apps to terminate without cleanup, sometimes leaving ghost windows.
+- **Cause**: Force-kill sends `TerminateProcess` which doesn't send `WM_CLOSE` to windows.
+- **Fix**: Implemented graceful close chain:
+  1. `taskkill /IM app.exe /T` (sends WM_CLOSE, lets app save state)
+  2. Wait 1 second
+  3. `taskkill /IM app.exe /F /T` (force-kill, only if graceful failed)
+
+### ✅ RESOLVED: Lock Screen via rundll32 Flashed Console
+- **Symptom**: `lock_screen()` briefly showed a subprocess window before locking.
+- **Cause**: `subprocess.run(['rundll32.exe', 'user32.dll,LockWorkStation'])` creates a visible process.
+- **Fix**: Replaced with `ctypes.windll.user32.LockWorkStation()` which locks directly via Win32 API.
+
+### ✅ IMPLEMENTED: Safety Module (`core/safety.py`)
+- **Purpose**: Prevent LLM hallucination from executing dangerous commands.
+- **Components**:
+  - `TREE_PROTECTED_PATHS`: `C:\Windows`, `C:\Program Files`, `ProgramData` — blocks path + all descendants.
+  - `EXACT_PROTECTED_PATHS`: `C:\`, `AppData\Local`, `AppData\Roaming` — blocks only the exact path (not children like Desktop).
+  - `DANGEROUS_TOOLS`: `shutdown_computer`, `restart_computer`, `empty_recycle_bin`, `lock_screen` — require spoken confirmation.
+  - `BLOCKED_TOOLS`: `format_disk`, `delete_system`, `rm_rf`, `wipe` — always rejected.
+  - `DANGEROUS_CMD_PATTERNS`: 18 regex patterns for dangerous shell commands.
+  - `INJECTION_CHARS`: Blocks `& | ; > < ' " \` in app names.
+
+### ✅ Bug Fix: Desktop/Downloads False-Positive in Path Protection
+- **Symptom**: `is_path_protected('C:\Users\ADMIN\Desktop')` returned `True` — blocking legitimate folder access.
+- **Cause**: `C:\` (system drive root) was in the tree-protected list. Every path on the C: drive was a child of `C:\`.
+- **Fix**: Split into two-tier checking:
+  - `TREE_PROTECTED_PATHS`: Uses `relative_to()` — blocks path AND all children.
+  - `EXACT_PROTECTED_PATHS`: Uses `==` only — blocks the exact path, not children.
+
+### ✅ IMPLEMENTED: Confirmation Flow (`intent_router.py`)
+- **Mechanism**: Dangerous tools store a pending action in module state. Next voice command checks for confirm/cancel.
+- **Timeout**: 30 seconds — auto-clears after expiry.
+- **Confirm phrases**: yes, yeah, confirm, go ahead, do it, proceed, okay
+- **Cancel phrases**: cancel, no, stop, abort, never mind, forget it
+- **Unrelated commands**: Clear pending and process the new command normally.
+
+### ✅ IMPLEMENTED: LLM Safety Hardening (`llm_agent.py`)
+- Added 5 explicit safety rules to the Ollama system prompt.
+- Tool name validation: LLM-suggested tool names must exist in the available tool list.
+- `_validate_tool_safety()` runs before every tool invocation.
+- Multi-step plans are fully pre-validated before any step executes.
+- String arguments scanned for dangerous shell patterns.
+
 ### Phase 5: SQLite Memory
 | Error | Likely Cause | Fix |
 |-------|-------------|-----|
@@ -208,6 +284,14 @@ result = route(command, allow_llm=False)
 | `PermissionError` on file access | File in use by another process | Add retry logic with `time.sleep(0.5)` |
 | Audio device not found | No default input/output device | Check `sd.query_devices()` and set device explicitly |
 
+### Safety Module (`core/safety.py`)
+| Error | Likely Cause | Fix |
+|-------|-------------|-----|
+| Legitimate path blocked | Path is inside `TREE_PROTECTED_PATHS` | Move to `EXACT_PROTECTED_PATHS` if only the exact path should be blocked |
+| Confirmation not registering | 30s timeout expired | Re-issue the command to get a fresh confirmation prompt |
+| LLM tool rejected as hallucinated | Tool name not in available tools list | Verify the tool is registered in the skill's `TOOLS` dict |
+| App name sanitisation too strict | Name contains `\` from path | Use basename only, strip path separators before sanitising |
+
 ---
 
 ## Environment Info
@@ -222,4 +306,4 @@ result = route(command, allow_llm=False)
 
 ---
 
-*Last updated: 2026-03-29*
+*Last updated: 2026-04-05*

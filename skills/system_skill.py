@@ -1,17 +1,129 @@
+# skills/system_skill.py
+# ──────────────────────────────────────────────────────────────────────
+# System-level tools: volume, brightness, media, app management, etc.
+# v2 — Hardened against UI crashes + safety integration
+# ──────────────────────────────────────────────────────────────────────
+
 # 1. stdlib
+import ctypes
 import datetime
 import logging
 import os
 import subprocess
+import time
 
 # 2. third-party
 import pyautogui
 
 # 3. internal
-from config import APP_ALIASES
+from config import APP_ALIASES, APP_PROPER_NAMES, APP_PROCESS_MAP
+from core.safety import sanitise_app_name, is_path_protected
 
 logger = logging.getLogger('dna.skill.system')
 
+# ── Win32 Constants for crash-free process creation ────────────────
+# These prevent the child process from inheriting our console window
+# which is the root cause of the "black screen" on app close.
+CREATE_NO_WINDOW = 0x08000000
+DETACHED_PROCESS = 0x00000008
+CREATE_NEW_PROCESS_GROUP = 0x00000200
+
+# Combined flags for maximum isolation
+_LAUNCH_FLAGS = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+
+
+def _safe_popen(args: list[str], shell: bool = False) -> subprocess.Popen | None:
+    """Launch a process fully detached from our console.
+
+    - Uses DETACHED_PROCESS so the child gets its own console (or none).
+    - Redirects stdin/stdout/stderr to DEVNULL to avoid pipe deadlocks.
+    - Returns the Popen object on success, None on failure.
+    """
+    try:
+        proc = subprocess.Popen(
+            args,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=_LAUNCH_FLAGS,
+            close_fds=True,
+            shell=shell,
+            start_new_session=True,  # Fully detach from parent session
+        )
+        logger.debug('Launched PID %d: %s', proc.pid, args)
+        return proc
+    except FileNotFoundError:
+        logger.warning('Executable not found: %s', args)
+        return None
+    except OSError as e:
+        logger.error('OS error launching %s: %s', args, e)
+        return None
+    except Exception as e:
+        logger.error('Failed to launch %s: %s', args, e)
+        return None
+
+
+def _safe_startfile(target: str) -> bool:
+    """Use os.startfile with error handling.
+
+    os.startfile is the safest way to open files / protocols on Windows
+    because it delegates to the Shell (ShellExecute) which handles
+    window creation correctly.
+    """
+    try:
+        os.startfile(target)
+        return True
+    except OSError as e:
+        logger.error('os.startfile failed for %s: %s', target, e)
+        return False
+    except Exception as e:
+        logger.error('Unexpected error in startfile for %s: %s', target, e)
+        return False
+
+
+def _graceful_close(exe_name: str, display_name: str) -> str:
+    """Try to close an app gracefully, falling back to force-kill.
+
+    Chain: taskkill (graceful) → wait 2s → taskkill /F (forced)
+    This avoids the abrupt termination that can leave orphan windows.
+    """
+    # Step 1: Graceful close (sends WM_CLOSE to all windows of the process)
+    result = subprocess.run(
+        ['taskkill', '/IM', exe_name, '/T'],
+        capture_output=True, text=True, check=False,
+        creationflags=CREATE_NO_WINDOW,
+    )
+
+    if result.returncode == 0:
+        logger.info('Gracefully closed %s', exe_name)
+        return f'Closed {display_name}.'
+
+    # Step 2: If graceful close failed, wait briefly then force-kill
+    time.sleep(1.0)
+
+    result = subprocess.run(
+        ['taskkill', '/IM', exe_name, '/F', '/T'],
+        capture_output=True, text=True, check=False,
+        creationflags=CREATE_NO_WINDOW,
+    )
+
+    if result.returncode == 0:
+        logger.info('Force-killed %s', exe_name)
+        return f'Closed {display_name}.'
+
+    # Step 3: Check if process is actually not running
+    err_msg = (result.stderr or '').strip().lower()
+    if 'not found' in err_msg or result.returncode == 128:
+        return f'{display_name} is not currently running.'
+
+    logger.warning('taskkill failed for %s (rc=%d): %s',
+                   exe_name, result.returncode, result.stderr)
+    return f'Could not close {display_name}. It may require manual closing.'
+
+
+# ════════════════════════════════════════════════════════════════════
+# Volume Controls
+# ════════════════════════════════════════════════════════════════════
 
 def set_volume(level: str) -> str:
     """Set system volume to a percentage (0-100)."""
@@ -45,6 +157,10 @@ def get_volume() -> str:
         return f'Could not get volume: {str(e)}'
 
 
+# ════════════════════════════════════════════════════════════════════
+# Brightness Controls
+# ════════════════════════════════════════════════════════════════════
+
 def set_brightness(level: str) -> str:
     """Set screen brightness (0-100)."""
     try:
@@ -52,9 +168,9 @@ def set_brightness(level: str) -> str:
         if target < 0 or target > 100:
             return 'Brightness must be between 0 and 100.'
 
-        # Use PowerShell to set brightness
         cmd = f'PowerShell "(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1, {target})"'
-        subprocess.run(cmd, shell=True, check=True)
+        subprocess.run(cmd, shell=True, check=True,
+                       creationflags=CREATE_NO_WINDOW)
         return f'Brightness set to {target} percent.'
     except Exception as e:
         logger.error('set_brightness failed: %s', e)
@@ -64,15 +180,19 @@ def set_brightness(level: str) -> str:
 def get_brightness() -> str:
     """Get current screen brightness level."""
     try:
-        # Use PowerShell to get brightness
         cmd = 'PowerShell "(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightness).CurrentBrightness"'
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True,
+                                check=True, creationflags=CREATE_NO_WINDOW)
         current = int(result.stdout.strip())
         return f'Brightness is at {current} percent.'
     except Exception as e:
         logger.error('get_brightness failed: %s', e)
         return f'Could not get brightness: {str(e)}'
 
+
+# ════════════════════════════════════════════════════════════════════
+# Mute / Audio Controls
+# ════════════════════════════════════════════════════════════════════
 
 def mute_toggle() -> str:
     """Toggle system mute on/off."""
@@ -116,6 +236,10 @@ def unmute() -> str:
         return f'Could not unmute: {str(e)}'
 
 
+# ════════════════════════════════════════════════════════════════════
+# Media Controls
+# ════════════════════════════════════════════════════════════════════
+
 def media_play_pause() -> str:
     """Toggle media play/pause."""
     try:
@@ -146,67 +270,118 @@ def media_previous() -> str:
         return f'Could not go to previous track: {str(e)}'
 
 
-def open_app(app_name: str) -> str:
-    """Open an application by name."""
-    try:
-        import re
-        name = app_name.lower().strip()
-        if re.search(r'[&|;<>\'"]', name):
-            return "Application name contains invalid characters."
+# ════════════════════════════════════════════════════════════════════
+# App Launch & Close — CRASH-FREE
+# ════════════════════════════════════════════════════════════════════
 
+def open_app(app_name: str) -> str:
+    """Open an application by name (crash-free).
+
+    Launch strategy by app type:
+      1. shell:AppsFolder (UWP/Store apps) → explorer.exe via _safe_popen
+      2. Protocol handlers (whatsapp:, ms-settings:) → os.startfile
+      3. Direct executables (.exe paths) → _safe_popen
+      4. Short names (notepad, calc) → os.startfile fallback
+    """
+    try:
+        # ── Sanitise input ──
+        safe_name = sanitise_app_name(app_name)
+        if safe_name is None:
+            return 'That application name looks invalid. Please try again.'
+
+        name = safe_name.lower().strip()
+        display_name = APP_PROPER_NAMES.get(name, app_name.title())
         executable = APP_ALIASES.get(name)
 
         if executable:
-            if hasattr(os, 'startfile'):
-                os.startfile(executable)
+            if 'shell:AppsFolder' in executable:
+                # UWP / Store apps — explorer is the only reliable launcher.
+                # Using _safe_popen with full detachment prevents the
+                # explorer window from inheriting our console.
+                proc = _safe_popen(['explorer.exe', executable])
+                if proc is None:
+                    return f'Could not launch {display_name}. The app may not be installed.'
+                return f'Opening {display_name}.'
+
+            elif executable.endswith(':') or '://' in executable:
+                # Protocol handler (whatsapp:, ms-settings:, https://...)
+                if _safe_startfile(executable):
+                    return f'Opening {display_name}.'
+                return f'Could not open {display_name}.'
+
             else:
-                subprocess.Popen(
-                    [executable],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            return f'Opening {app_name}.'
+                # Direct executable path or short name
+                proc = _safe_popen([executable])
+                if proc is None:
+                    # Fallback: try os.startfile which handles more edge cases
+                    if _safe_startfile(executable):
+                        return f'Opening {display_name}.'
+                    return f'Could not find or launch {display_name}.'
+                return f'Opening {display_name}.'
+
         else:
-            # Try opening via Windows search / start menu
+            # Unknown app — try os.startfile which delegates to Windows Shell
             if hasattr(os, 'startfile'):
-                os.startfile(name)
-                return f'Trying to open {app_name}.'
-            else:
-                import shutil
-                resolved = shutil.which(name)
-                if resolved:
-                    subprocess.Popen(
-                        [resolved],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                    )
-                    return f'Trying to open {app_name}.'
-                else:
-                    return f'Could not find executable for {app_name}.'
+                if _safe_startfile(name):
+                    return f'Trying to open {display_name}.'
+
+            # Last resort: check PATH
+            import shutil
+            resolved = shutil.which(name)
+            if resolved:
+                proc = _safe_popen([resolved])
+                if proc:
+                    return f'Trying to open {display_name}.'
+
+            return f'Could not find {display_name}. You can add it to the config.'
 
     except Exception as e:
-        logger.error('open_app failed: %s', e)
+        logger.error('open_app failed: %s', e, exc_info=True)
         return f'Could not open {app_name}: {str(e)}'
 
 
 def close_app(app_name: str) -> str:
-    """Close an application by name."""
+    """Close an application by name (graceful → forced fallback)."""
     try:
-        name = app_name.lower().strip()
-        # Use taskkill to close the process
-        exe = APP_ALIASES.get(name, f'{name}.exe')
-        if '\\' in exe:
-            exe = os.path.basename(exe)
-        subprocess.run(
-            ['taskkill', '/IM', exe, '/F'],
-            capture_output=True,
-            check=False,
-        )
-        return f'Closed {app_name}.'
+        # ── Sanitise input ──
+        safe_name = sanitise_app_name(app_name)
+        if safe_name is None:
+            return 'That application name looks invalid. Please try again.'
+
+        name = safe_name.lower().strip()
+        display_name = APP_PROPER_NAMES.get(name, app_name.title())
+
+        # Determine the target process name
+        exe_name = APP_PROCESS_MAP.get(name)
+
+        if not exe_name:
+            path_or_name = APP_ALIASES.get(name, f'{name}.exe')
+            exe_name = os.path.basename(path_or_name)
+
+            # Filter out protocol-style links
+            if ':' in exe_name or '!' in exe_name or ' ' in exe_name:
+                exe_name = f'{name}.exe'
+
+        return _graceful_close(exe_name, display_name)
+
     except Exception as e:
-        logger.error('close_app failed: %s', e)
+        logger.error('close_app failed: %s', e, exc_info=True)
         return f'Could not close {app_name}: {str(e)}'
 
+
+def close_active_window() -> str:
+    """Close the currently active window using Alt+F4."""
+    try:
+        pyautogui.hotkey('alt', 'f4')
+        return 'Attempted to close the active window.'
+    except Exception as e:
+        logger.error('close_active_window failed: %s', e)
+        return f'Could not close active window: {str(e)}'
+
+
+# ════════════════════════════════════════════════════════════════════
+# Screenshots
+# ════════════════════════════════════════════════════════════════════
 
 def take_screenshot() -> str:
     """Take a screenshot and save to Desktop."""
@@ -224,6 +399,10 @@ def take_screenshot() -> str:
         logger.error('take_screenshot failed: %s', e)
         return f'Could not take screenshot: {str(e)}'
 
+
+# ════════════════════════════════════════════════════════════════════
+# Time & Date
+# ════════════════════════════════════════════════════════════════════
 
 def get_time() -> str:
     """Get the current time."""
@@ -247,6 +426,10 @@ def get_date() -> str:
         return f'Could not get the date: {str(e)}'
 
 
+# ════════════════════════════════════════════════════════════════════
+# Power Management — REQUIRES CONFIRMATION (handled by router)
+# ════════════════════════════════════════════════════════════════════
+
 def shutdown_computer(delay: str = '60') -> str:
     """Schedule a shutdown with a delay in seconds."""
     try:
@@ -257,6 +440,7 @@ def shutdown_computer(delay: str = '60') -> str:
         subprocess.run(
             ['shutdown', '/s', '/t', str(seconds)],
             check=True,
+            creationflags=CREATE_NO_WINDOW,
         )
         return f'Computer will shut down in {seconds} seconds.'
     except Exception as e:
@@ -267,7 +451,8 @@ def shutdown_computer(delay: str = '60') -> str:
 def cancel_shutdown() -> str:
     """Cancel a scheduled shutdown."""
     try:
-        subprocess.run(['shutdown', '/a'], check=True)
+        subprocess.run(['shutdown', '/a'], check=True,
+                       creationflags=CREATE_NO_WINDOW)
         return 'Shutdown cancelled.'
     except Exception as e:
         logger.error('cancel_shutdown failed: %s', e)
@@ -284,6 +469,7 @@ def restart_computer(delay: str = '60') -> str:
         subprocess.run(
             ['shutdown', '/r', '/t', str(seconds)],
             check=True,
+            creationflags=CREATE_NO_WINDOW,
         )
         return f'Computer will restart in {seconds} seconds.'
     except Exception as e:
@@ -294,26 +480,29 @@ def restart_computer(delay: str = '60') -> str:
 def lock_screen() -> str:
     """Lock the computer screen."""
     try:
-        subprocess.run(
-            ['rundll32.exe', 'user32.dll,LockWorkStation'],
-            check=True,
-        )
+        # Use ctypes for more reliable lock (avoids subprocess window flash)
+        ctypes.windll.user32.LockWorkStation()
         return 'Screen locked.'
     except Exception as e:
         logger.error('lock_screen failed: %s', e)
         return f'Could not lock screen: {str(e)}'
 
+
 def empty_recycle_bin() -> str:
     """Empty the Windows Recycle Bin."""
     try:
-        # Use PowerShell to empty the bin
         cmd = 'PowerShell Clear-RecycleBin -Force -Confirm:$false -ErrorAction SilentlyContinue'
-        subprocess.run(cmd, shell=True, check=True)
+        subprocess.run(cmd, shell=True, check=True,
+                       creationflags=CREATE_NO_WINDOW)
         return 'Recycle bin emptied.'
     except Exception as e:
         logger.error('empty_recycle_bin failed: %s', e)
         return 'Could not empty the recycle bin. It might already be empty.'
 
+
+# ════════════════════════════════════════════════════════════════════
+# System Status
+# ════════════════════════════════════════════════════════════════════
 
 def get_system_status() -> str:
     """Get current CPU and RAM usage."""
@@ -327,7 +516,10 @@ def get_system_status() -> str:
         return f'Could not get system status: {str(e)}'
 
 
-# Skill module contract: expose all tools via TOOLS dict
+# ════════════════════════════════════════════════════════════════════
+# Tool Registry
+# ════════════════════════════════════════════════════════════════════
+
 TOOLS = {
     'set_volume': set_volume,
     'get_volume': get_volume,
@@ -339,6 +531,7 @@ TOOLS = {
     'media_previous': media_previous,
     'open_app': open_app,
     'close_app': close_app,
+    'close_active_window': close_active_window,
     'take_screenshot': take_screenshot,
     'get_time': get_time,
     'get_date': get_date,

@@ -197,6 +197,8 @@ def transcribe(audio_data: np.ndarray) -> str:
             audio_data = audio_data.mean(axis=1)
 
         model = _get_model()
+        logger.info('Starting transcription (audio_len=%.1fs)...', len(audio_data) / SAMPLE_RATE)
+        
         segments, info = model.transcribe(
             audio_data,
             beam_size=3,
@@ -208,13 +210,21 @@ def transcribe(audio_data: np.ndarray) -> str:
             no_repeat_ngram_size=3,
         )
 
-        raw_text = ' '.join(segment.text.strip() for segment in segments).strip()
+        segment_texts = []
+        seg_count = 0
+        for segment in segments:
+            seg_count += 1
+            logger.debug('Segment %d: "%s" [%.2fs -> %.2fs]', 
+                         seg_count, segment.text, segment.start, segment.end)
+            segment_texts.append(segment.text.strip())
+            
+        raw_text = ' '.join(segment_texts).strip()
         text = _correct_transcription(raw_text)
 
         if text != raw_text.lower():
             logger.info('Corrected: "%s" → "%s"', raw_text, text)
-        logger.info('Transcribed (%s, %.2fs): "%s"',
-                     info.language, info.duration, text)
+        logger.info('Transcribed (%s, %d segments, %.2fs): "%s"',
+                     info.language, seg_count, info.duration, text)
         return text
 
     except Exception as e:

@@ -26,6 +26,7 @@ def main():
     from pipeline.stt import transcribe
     from pipeline.tts import speak
     from pipeline.intent_router import route
+    from pipeline.memory import init_db, log_command
     from core.session import update
 
     logger.info('=' * 50)
@@ -35,6 +36,7 @@ def main():
     # Confirm TTS is working with a startup greeting
     speak('DNA is online. Say hey Jarvis to wake me up.')
     logger.info('Startup complete. Entering main loop.')
+    init_db()
 
     while True:
         try:
@@ -67,11 +69,15 @@ def main():
             result = route(text)
 
             if not result or not result.strip():
-                speak('I could not process that command. Please try again.')
+                error_msg = 'I could not process that command. Please try again.'
+                log_command(text, error_msg, 'error')
+                speak(error_msg)
                 continue
 
             # Step 5: Speak the result
             logger.info('Result: "%s"', result)
+            status = 'error' if 'could not' in result.lower() else 'success'
+            log_command(text, result, status)
             speak(result)
 
         except KeyboardInterrupt:
@@ -80,6 +86,8 @@ def main():
             break
         except Exception as e:
             logger.error('Main loop error: %s', e, exc_info=True)
+            cmd_text = locals().get('text', 'unknown')
+            log_command(cmd_text, str(e), 'error')
             speak('Something went wrong. I am still listening.')
 
 

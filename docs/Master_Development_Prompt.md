@@ -16,8 +16,8 @@ Owner     : Jamiel J. — single user, personal tool
 Hardware  : Intel i3-1134G4 (or N305 class), 8GB RAM, no GPU, Intel UHD 128MB
 Repo      : github.com/JAMIEL-J/DNA-Voice-Assistant
 
-Current Phase : Phase 5: SQLite Memory + Command Logging
-Current Task  : Adding SQLite tables and mandatory command/failure logging across the runtime.
+Current Phase : Phase 6: Session state + pronoun resolution (v2)
+Current Task  : Creating Context Resolver to track active file/app and resolve pronouns (it, this, that) before intention routing.
 ```
 
 **What DNA does:**
@@ -86,6 +86,11 @@ Microphone
                                                                             ├─> vision_skill (Moondream)
                                                                             ├─> browser_skill
                                                                             └─> learned/ (approved snippets)
+                                                                      └─> core/safety.py (Safety Gate)
+                                                                            ├─> Protected path check
+                                                                            ├─> Dangerous tool → Confirmation flow
+                                                                            ├─> Blocked tool → Hard reject
+                                                                            └─> Command sanitisation
                                                                       └─> Piper TTS → Speaker
                                                                       └─> SQLite logger
 
@@ -97,6 +102,8 @@ Microphone
 
 - Regex handles: volume, mute, media, open app, shutdown, screenshot, time
 - LLM handles: everything else
+- Dangerous tools (shutdown, restart, empty bin, lock): require spoken confirmation
+- Blocked tools (format_disk, delete_system, rm_rf): always rejected
 - DuckDB handles: any dataset >100K rows (never pandas for large files)
 - NL2SQL for: query / filter / aggregate commands
 - NL2Py for: transform / feature engineering / plot commands
@@ -129,6 +136,7 @@ DNA-Assistant/
 │   └── learned/              # Approved skill snippets (v2)
 ├── core/
 │   ├── session.py            # Session state: active_file, active_app, last_result, last_df
+│   ├── safety.py             # Safety & security: path protection, command sanitisation, confirmation gates
 │   ├── skill_registry.py     # Auto-discovers all *_skill.py files, builds TOOL_MAP
 │   └── proactive.py          # Daemon thread: CPU >90% alert, new download alert
 ├── ui/
@@ -257,6 +265,26 @@ def needs_thinking(command: str) -> bool:
 - Always confirm with the user before saving any new skill
 - `approved` column in `learned_skills` must be 1 before any execution
 - Preference and alias learning need no approval — they are non-executable
+
+**14. PROCESS ISOLATION (APP LAUNCH)**
+
+- All subprocess.Popen calls MUST use `creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP`
+- All subprocess.run calls MUST use `creationflags=CREATE_NO_WINDOW` (0x08000000)
+- Always set `start_new_session=True` and `close_fds=True` on Popen
+- Redirect stdin/stdout/stderr to `subprocess.DEVNULL` for launched apps
+- Always close gracefully first (`taskkill /T`), then force-kill as fallback
+- Never use `rundll32.exe` for lock — use `ctypes.windll.user32.LockWorkStation()`
+
+**15. SAFETY & CONFIRMATION FLOW**
+
+- All tools in `core/safety.DANGEROUS_TOOLS` require spoken user confirmation before execution
+- All tools in `core/safety.BLOCKED_TOOLS` must NEVER execute — reject immediately
+- Confirmation window is 30 seconds — auto-cancels after timeout
+- LLM system prompt must include explicit safety rules (no file deletion, no system modification)
+- LLM-suggested tool names must be validated against the available tool list — reject hallucinated names
+- All tool arguments must be scanned for dangerous shell patterns before execution
+- Protected system paths (`C:\Windows`, `C:\Program Files`, `AppData`) must never be targets of file operations
+- App names must be sanitised against shell injection characters (`& | ; > < ' " \`)
 
 ---
 
@@ -474,8 +502,8 @@ Never auto-execute. Always confirm with user before saving a skill snippet.
 | 2 | Wake word + system commands (open/volume/media) | [x] |
 | 3 | Intent router — all simple commands without LLM | [x] |
 | 4 | LLM agent — complex file and DA commands | [x] |
-| 5 | SQLite memory + command logging | [/] |
-| 6 | Session state + pronoun resolution (v2) | [ ] |
+| 5 | SQLite memory + command logging | [x] |
+| 6 | Session state + pronoun resolution (v2) | [/] |
 | 7 | Plan executor — multi-step commands (v2) | [ ] |
 | 8 | Skill registry — auto-discovery (v2) | [ ] |
 | 9 | DuckDB + NL2SQL / NL2Py data router (v2) | [ ] |
@@ -497,3 +525,40 @@ Never auto-execute. Always confirm with user before saving a skill snippet.
 - Added Ollama tuning constants in `config.py` (`OLLAMA_TIMEOUT`, `OLLAMA_CTX_NORMAL`, `OLLAMA_CTX_THINKING`, `OLLAMA_TEMPERATURE`).
 - Updated `.env.example` for the new Ollama settings.
 - Regression tested routing: `test_phase2.py` passed (23 out of 23).
+
+## CRASH FIX & SAFETY HARDENING (2026-04-05)
+
+### UI Crash Fix (Black Screen on App Close)
+- **Root cause**: Child processes inherited DNA's console window via `subprocess.Popen` without creation flags. When UWP/shell apps closed, the shared window handle was destroyed, causing a black screen artifact.
+- **Fix**: All `Popen` calls now use `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP` with `start_new_session=True`. All `subprocess.run` calls use `CREATE_NO_WINDOW`.
+- Graceful close chain: `taskkill /T` (WM_CLOSE) → wait 1s → `taskkill /F /T` (force) fallback.
+- Lock screen changed from `rundll32.exe` to `ctypes.windll.user32.LockWorkStation()`.
+
+### Safety Module (`core/safety.py` — NEW)
+- Two-tier path protection: TREE_PROTECTED (entire directory tree blocked) and EXACT_PROTECTED (only exact path blocked).
+- Dangerous tool confirmation flow (30s timeout): shutdown, restart, empty recycle bin, lock screen.
+- Blocked tools (never execute): format_disk, delete_system, rm_rf, wipe.
+- Dangerous shell command pattern detection (format, rd /s, diskpart, reg delete, etc.).
+- App name sanitisation against shell injection characters.
+
+### LLM Safety Hardening (`pipeline/llm_agent.py`)
+- Safety rules injected into system prompt (never delete files, never guess destructive actions).
+- Tool name validation against available tool list — hallucinated names are rejected.
+- Pre-execution safety gate (`_validate_tool_safety`) on every tool invocation.
+- Multi-step plans are fully pre-validated before any step executes.
+
+### Intent Router Confirmation Flow (`pipeline/intent_router.py`)
+- Dangerous tools trigger a spoken warning and await confirmation.
+- Confirmation expires after 30 seconds or on unrelated command.
+- Cancel phrases supported: cancel, no, stop, abort, never mind, forget it.
+
+### File Skill Hardening (`skills/file_skill.py`)
+- `_resolve_folder()` validates paths against `is_path_protected()` before and after resolution.
+- Blocks LLM-directed browsing of `C:\Windows`, `C:\Program Files`, `AppData`.
+
+## PHASE 5 COMPLETION NOTES (2026-04-05)
+
+- Implemented `pipeline/memory.py` encapsulating SQLite operations.
+- Created `init_db()` and tables for `conversation`, `command_log`, `preferences`, and `aliases`.
+- Hooked up `log_command(command, result, status)` inside `dna_main.py` main loop.
+- Automatically handles success/error distinction to populate DB log correctly.
