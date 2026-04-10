@@ -8,11 +8,11 @@ import numpy as np
 import sounddevice as sd
 from openwakeword.model import Model
 
-# 3. internal
 from config import (
     WAKE_WORD_MODEL, WAKE_WORD_THRESHOLD, WAKE_WORD_FRAMEWORK,
     SAMPLE_RATE, WAKE_CHUNK_SIZE,
 )
+from core.session import get as session_get
 
 logger = logging.getLogger('dna.wake')
 
@@ -97,6 +97,10 @@ def wait_for_wake_word(timeout: float = None) -> bool:
             callback=audio_callback,
         ):
             while not event.is_set():
+                if not session_get('is_running', True):
+                    model.reset()
+                    return False
+                    
                 if timeout is not None and (time.time() - start_time) >= timeout:
                     logger.info('Wake word timeout after %.1fs', timeout)
                     model.reset()

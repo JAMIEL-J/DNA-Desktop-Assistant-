@@ -12,15 +12,15 @@ import time
 from typing import Optional
 
 # 2. internal
+from pipeline.context_resolver import resolve_pronouns
 from pipeline.llm_agent import handle_complex_command
-from skills.system_skill import TOOLS as SYSTEM_TOOLS
-from skills.browser_skill import TOOLS as BROWSER_TOOLS
-from skills.file_skill import TOOLS as FILE_TOOLS
+from core.skill_registry import get_tool_map
 from core.safety import (
     is_tool_dangerous,
     is_tool_blocked,
     get_danger_warning,
 )
+from core.personality import humanize_response
 
 logger = logging.getLogger('dna.router')
 
@@ -90,7 +90,7 @@ def _check_confirmation(command: str) -> Optional[str]:
     if any(phrase in cleaned for phrase in cancel_patterns):
         logger.info('User cancelled pending: %s', pending_tool)
         _clear_pending()
-        return 'Cancelled. No action was taken.'
+        return humanize_response('No problem, I\'ve cancelled that for you.')
 
     # ── Confirmation phrases ──
     confirm_patterns = [
@@ -104,14 +104,15 @@ def _check_confirmation(command: str) -> Optional[str]:
         _clear_pending()
 
         logger.info('User CONFIRMED dangerous action: %s', tool_name)
-        tool_fn = _EXTENDED_TOOLS.get(tool_name)
+        tool_fn = get_tool_map().get(tool_name)
         if tool_fn:
             try:
-                return tool_fn(**args)
+                result = tool_fn(**args)
+                return humanize_response(result)
             except Exception as e:
                 logger.error('Confirmed tool %s failed: %s', tool_name, e)
-                return f'Could not execute {tool_name}: {str(e)}'
-        return f'Tool {tool_name} not found.'
+                return humanize_response(f'Could not execute {tool_name}: {str(e)}')
+        return humanize_response(f'Tool {tool_name} not found.')
 
     # Command is unrelated — clear pending and process normally
     logger.info('Unrelated command while pending — clearing pending: %s', pending_tool)
@@ -174,14 +175,41 @@ SIMPLE_INTENTS = [
 
     # System Utilities
     (re.compile(r'\b(?:empty|clear)\s+(?:the\s+)?(?:recycle\s+)?bin\b', re.I), 'empty_recycle_bin', lambda m: {}),
-    (re.compile(r'\b(?:system\s+status|pc\s+status|computer\s+status|how\s+is\s+my\s+(?:pc|computer)\s+doing)\b', re.I), 'get_system_status', lambda m: {}),
+    (re.compile(r'\b(?:system\s+(?:status|start|stat(?:us|rt|art))|pc\s+status|computer\s+status|how\s+is\s+my\s+(?:pc|computer)\s+doing)', re.I), 'get_system_status', lambda m: {}),
 
     # --- SEARCH & NAVIGATION ---
     (re.compile(r'\b(?:play|search)\s+(.+)\s+on\s+youtube\b', re.I), 'search_youtube', lambda m: {'query': _clean_arg(m.group(1))}),
     (re.compile(r'\bsearch\s+google\s+(?:for\s+)?(.+)', re.I), 'search_google', lambda m: {'query': _clean_arg(m.group(1))}),
     (re.compile(r'\bgoogle\s+(?:for\s+)?(.+)', re.I), 'search_google', lambda m: {'query': _clean_arg(m.group(1))}),
+
+    # --- JOB SEARCH (before generic search catch-all) ---
+    (re.compile(r'\b(?:show|find|get|check|search|are there|any).+(?:job|opening|vacancies|hiring|position)', re.I),
+     'check_jobs', lambda m: {}),
+    (re.compile(r'\b(?:job|opening|vacancies).+(?:data analyst|data science|analyst|fresher)', re.I),
+     'check_jobs', lambda m: {}),
+    (re.compile(r'\b(?:is there|are there).+(?:opening|job|hiring|vacancy)', re.I),
+     'check_jobs', lambda m: {}),
+    (re.compile(r'\bwhat.+(?:job|opening).+(?:available|out there)', re.I),
+     'check_jobs', lambda m: {}),
+    (re.compile(r'\bopen\s+(?:job|naukri|indeed|internshala)\s+portal', re.I),
+     'open_job_portals', lambda m: {}),
+    (re.compile(r'\b(?:browse|search)\s+jobs\b', re.I),
+     'open_job_portals', lambda m: {}),
+
+    # Generic search (catch-all — MUST be after specific search intents)
     (re.compile(r'\bsearch\s+(?:for\s+)?(.+)', re.I), 'search_google', lambda m: {'query': _clean_arg(m.group(1))}),
     (re.compile(r'\b(?:open|visit|go\s+to)\s+([\w.-]+\.[a-z]{2,})\b', re.I), 'open_url', lambda m: {'url': m.group(1).strip()}),
+
+    # --- DATA ANALYSIS ---
+    # "analyze the churn data file" → keyword='churn'
+    # "analyze the sales data" → keyword='sales'  
+    (re.compile(r'\b(?:analy[sz]e|check|summarize|look at)\s+(?:the\s+|my\s+)?(\w+)\s+(?:data|date)(?:\s+file)?\b', re.I),
+     'quick_analyze', lambda m: {'keyword': _clean_arg(m.group(1))}),
+    # "analyze my data" (no keyword)
+    (re.compile(r'\b(?:analy[sz]e|check|summarize|look at)\s+(?:my\s+|the\s+)?(?:data|date)\b', re.I),
+     'quick_analyze', lambda m: {}),
+    (re.compile(r'\b(?:what(?:\'s| is)\s+in\s+(?:my\s+|the\s+)?data)\b', re.I),
+     'quick_analyze', lambda m: {}),
 
     # --- FOLDER COMMANDS (High Priority) ---
     (re.compile(r'\b(?:open|show|explorer|start|launch)\s+(?:the\s+|my\s+)?(.+)\s+folder\b', re.I),
@@ -194,16 +222,35 @@ SIMPLE_INTENTS = [
     # --- GENERIC catch-alls (MUST BE LAST) ---
     (re.compile(r'\b(?:open|launch|start|run)(?:[,\s]+)?(.*)', re.I),
      'open_app', lambda m: {'app_name': _clean_arg(m.group(1))}),
+
+    # ── Explorer-safe close (MUST be before generic close_app) ──
+    # "close file explorer", "close explorer", "close files", "quit explorer"
+    (re.compile(r'\b(?:close|exit|quit|kill)\s+(?:the\s+)?(?:file\s+)?explorer\b', re.I),
+     'close_explorer_windows', lambda m: {}),
+    (re.compile(r'\b(?:close|exit|quit|kill)\s+(?:the\s+)?files\b', re.I),
+     'close_explorer_windows', lambda m: {}),
+
+    # ── Shell recovery ──
+    (re.compile(r'\b(?:recover|restore|restart|fix)\s+(?:the\s+)?(?:windows\s+)?(?:shell|desktop|taskbar)\b', re.I),
+     'recover_explorer_shell', lambda m: {}),
+
+    # ── Active window close ──
     (re.compile(r'\b(?:close|exit|quit|kill)(?:[,\s]+)?(?:this\s+)?(?:window|app|application|it|current\s+app)\b', re.I),
      'close_active_window', lambda m: {}),
+
+    # ── Generic close (catch-all) ──
     (re.compile(r'\b(?:close|exit|quit|kill)(?:[,\s]+)?(.*)', re.I),
      'close_app', lambda m: {'app_name': _clean_arg(m.group(1))}),
 ]
 
 
 def _clean_arg(text: str) -> str:
-    """Strip trailing punctuation and whitespace from captured args."""
-    return re.sub(r'[\s.,!?;:]+$', '', text).strip()
+    """Strip trailing punctuation, whitespace, and redundant clauses from captured args."""
+    # Stop at the first comma or ' and ' or ' then ' if it exists
+    # This prevents catching hallucinated repetitions as part of the app name
+    split_text = re.split(r'[,]| and | then ', text, flags=re.I)
+    clean = split_text[0].strip()
+    return re.sub(r'[\s.,!?;:]+$', '', clean).strip()
 
 
 def _parse_delay(match) -> str:
@@ -216,83 +263,7 @@ def _parse_delay(match) -> str:
     return str(seconds)
 
 
-# ════════════════════════════════════════════════════════════════════
-# Volume / Brightness step functions
-# ════════════════════════════════════════════════════════════════════
 
-def _volume_up() -> str:
-    """Increase volume by 10 percent."""
-    try:
-        from pycaw.pycaw import AudioUtilities
-        device = AudioUtilities.GetSpeakers()
-        vol = device.EndpointVolume
-        current = vol.GetMasterVolumeLevelScalar()
-        new_level = min(1.0, current + 0.1)
-        vol.SetMasterVolumeLevelScalar(new_level, None)
-        return f'Volume increased to {round(new_level * 100)} percent.'
-    except Exception as e:
-        return f'Could not increase volume: {str(e)}'
-
-
-def _volume_down() -> str:
-    """Decrease volume by 10 percent."""
-    try:
-        from pycaw.pycaw import AudioUtilities
-        device = AudioUtilities.GetSpeakers()
-        vol = device.EndpointVolume
-        current = vol.GetMasterVolumeLevelScalar()
-        new_level = max(0.0, current - 0.1)
-        vol.SetMasterVolumeLevelScalar(new_level, None)
-        return f'Volume decreased to {round(new_level * 100)} percent.'
-    except Exception as e:
-        return f'Could not decrease volume: {str(e)}'
-
-
-def _brightness_up() -> str:
-    """Increase brightness by 10 percent."""
-    try:
-        cmd_get = 'PowerShell "(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightness).CurrentBrightness"'
-        result = subprocess.run(cmd_get, shell=True, capture_output=True, text=True,
-                                check=True, creationflags=CREATE_NO_WINDOW)
-        current = int(result.stdout.strip() if result.stdout.strip() else '50')
-        new_level = min(100, current + 10)
-        cmd_set = f'PowerShell "(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1, {new_level})"'
-        subprocess.run(cmd_set, shell=True, check=True,
-                       creationflags=CREATE_NO_WINDOW)
-        return f'Brightness increased to {new_level} percent.'
-    except Exception:
-        return 'Could not increase brightness.'
-
-
-def _brightness_down() -> str:
-    """Decrease brightness by 10 percent."""
-    try:
-        cmd_get = 'PowerShell "(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightness).CurrentBrightness"'
-        result = subprocess.run(cmd_get, shell=True, capture_output=True, text=True,
-                                check=True, creationflags=CREATE_NO_WINDOW)
-        current = int(result.stdout.strip() if result.stdout.strip() else '50')
-        new_level = max(0, current - 10)
-        cmd_set = f'PowerShell "(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1, {new_level})"'
-        subprocess.run(cmd_set, shell=True, check=True,
-                       creationflags=CREATE_NO_WINDOW)
-        return f'Brightness decreased to {new_level} percent.'
-    except Exception:
-        return 'Could not decrease brightness.'
-
-
-# ════════════════════════════════════════════════════════════════════
-# Extended Tools Map — all skills merged
-# ════════════════════════════════════════════════════════════════════
-
-_EXTENDED_TOOLS = {
-    **SYSTEM_TOOLS,
-    **BROWSER_TOOLS,
-    **FILE_TOOLS,
-    'volume_up': _volume_up,
-    'volume_down': _volume_down,
-    'brightness_up': _brightness_up,
-    'brightness_down': _brightness_down,
-}
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -311,7 +282,9 @@ def route(command: str, allow_llm: bool = True) -> Optional[str]:
     if not command or not command.strip():
         return None
 
+    # Resolve pronouns using session state
     cleaned = command.strip().lower()
+    cleaned = resolve_pronouns(cleaned)
     logger.debug('Routing command: "%s"', cleaned)
 
     # ── Step 1: Handle pending confirmations ──
@@ -328,9 +301,9 @@ def route(command: str, allow_llm: bool = True) -> Optional[str]:
             # Safety: blocked tools never execute
             if is_tool_blocked(tool_name):
                 logger.critical('BLOCKED tool via regex: %s', tool_name)
-                return 'That action is blocked for safety reasons.'
+                return humanize_response('That action is blocked for safety reasons.')
 
-            tool_fn = _EXTENDED_TOOLS.get(tool_name)
+            tool_fn = get_tool_map().get(tool_name)
             if not tool_fn:
                 logger.error('Tool not found: %s', tool_name)
                 return f'I understood {tool_name} but the tool is missing.'
@@ -343,9 +316,10 @@ def route(command: str, allow_llm: bool = True) -> Optional[str]:
                 warning = get_danger_warning(tool_name)
                 _set_pending(tool_name, args, warning)
                 logger.warning('Dangerous tool "%s" requires confirmation', tool_name)
-                return warning
+                return humanize_response(warning)
 
-            return tool_fn(**args)
+            result = tool_fn(**args)
+            return humanize_response(result)
 
     # ── Step 3: LLM fallback ──
     logger.info('No simple intent matched for: "%s"', cleaned)
@@ -353,4 +327,4 @@ def route(command: str, allow_llm: bool = True) -> Optional[str]:
         return None
 
     logger.info('Falling back to LLM agent for: "%s"', cleaned)
-    return handle_complex_command(cleaned, _EXTENDED_TOOLS)
+    return handle_complex_command(cleaned, get_tool_map())

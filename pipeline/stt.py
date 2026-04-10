@@ -26,13 +26,13 @@ WHISPER_PROMPT = (
     'play, pause, next track, previous track, '
     'what is the time, what is the date, '
     'shutdown, restart, lock screen, close, launch, '
-    'open file explorer, open terminal, open edge, open vscode'
+    'notion, open file explorer, open terminal, open edge, open vscode'
 )
 
 # Known words DNA expects — used for fuzzy correction
 _KNOWN_WORDS = {
     'notepad', 'chrome', 'calculator', 'explorer', 'terminal',
-    'edge', 'vscode', 'paint', 'settings', 'task',
+    'edge', 'vscode', 'paint', 'settings', 'task', 'notion', 'potion',
     'volume', 'mute', 'unmute', 'screenshot', 'shutdown',
     'restart', 'pause', 'play', 'next', 'previous', 'skip',
     'open', 'close', 'launch', 'start', 'set', 'turn',
@@ -97,31 +97,13 @@ def _deduplicate(text: str) -> str:
     if not parts:
         return text
 
-    # If >50% of parts are identical, collapse to a single instance
-    from collections import Counter
-    counts = Counter(parts)
-    most_common, freq = counts.most_common(1)[0]
-    if freq > 1 and freq / len(parts) > 0.5:
-        logger.info('Hallucination detected: "%s" repeated %dx → collapsed', most_common, freq)
-        return most_common
-
-    # Also catch consecutive duplicates: "open chrome open chrome" (no comma)
-    words = text.split()
-    # Try ngram sizes from large to small
-    for n in range(min(5, len(words) // 2), 0, -1):
-        ngram = ' '.join(words[:n])
-        repetitions = 0
-        i = 0
-        while i + n <= len(words):
-            chunk = ' '.join(words[i:i + n])
-            if chunk == ngram:
-                repetitions += 1
-                i += n
-            else:
-                break
-        if repetitions > 2 and repetitions * n >= len(words) * 0.5:
-            logger.info('Hallucination detected (ngram=%d): "%s" repeated %dx → collapsed', n, ngram, repetitions)
-            return ngram
+    # Fuzzy de-duplication for two similar parts (e.g. "close notion, close potion")
+    if len(parts) == 2:
+        from difflib import SequenceMatcher
+        ratio = SequenceMatcher(None, parts[0], parts[1]).ratio()
+        if ratio > 0.7:
+            logger.info('Similar parallel repetition detected: "%s" & "%s" (ratio=%.2f) → collapsed', parts[0], parts[1], ratio)
+            return parts[0]
 
     return text
 
