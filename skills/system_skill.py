@@ -18,6 +18,8 @@ import pyautogui
 # 3. internal
 from config import APP_ALIASES, APP_PROPER_NAMES, APP_PROCESS_MAP
 from core.safety import sanitise_app_name, is_path_protected
+from core.session import update as session_update, get as session_get
+from pipeline.memory import get_aliases
 
 logger = logging.getLogger('dna.skill.system')
 
@@ -86,7 +88,16 @@ def _graceful_close(exe_name: str, display_name: str) -> str:
 
     Chain: taskkill (graceful) → wait 2s → taskkill /F (forced)
     This avoids the abrupt termination that can leave orphan windows.
+
+    CRITICAL: explorer.exe is NEVER killed via taskkill because it IS the
+    Windows desktop shell.  Killing it nukes the taskbar, Start menu, and
+    desktop icons — causing a black screen.  Explorer folder windows are
+    closed through the dedicated _close_explorer_windows() helper instead.
     """
+    # ── Guard: NEVER taskkill explorer.exe ──
+    if exe_name.lower() == 'explorer.exe':
+        return _close_explorer_windows(display_name)
+
     # Step 1: Graceful close (sends WM_CLOSE to all windows of the process)
     result = subprocess.run(
         ['taskkill', '/IM', exe_name, '/T'],
@@ -96,7 +107,9 @@ def _graceful_close(exe_name: str, display_name: str) -> str:
 
     if result.returncode == 0:
         logger.info('Gracefully closed %s', exe_name)
-        return f'Closed {display_name}.'
+        if session_get('active_app') == display_name:
+            session_update('active_app', None)
+        return 'Alright, closed it.'
 
     # Step 2: If graceful close failed, wait briefly then force-kill
     time.sleep(1.0)
@@ -109,16 +122,122 @@ def _graceful_close(exe_name: str, display_name: str) -> str:
 
     if result.returncode == 0:
         logger.info('Force-killed %s', exe_name)
-        return f'Closed {display_name}.'
+        if session_get('active_app') == display_name:
+            session_update('active_app', None)
+        return 'Done, closed it.'
 
     # Step 3: Check if process is actually not running
     err_msg = (result.stderr or '').strip().lower()
     if 'not found' in err_msg or result.returncode == 128:
-        return f'{display_name} is not currently running.'
+        return 'It\'s not even running.'
 
     logger.warning('taskkill failed for %s (rc=%d): %s',
                    exe_name, result.returncode, result.stderr)
     return f'Could not close {display_name}. It may require manual closing.'
+
+
+# ── Explorer-safe window closing ──────────────────────────────────
+# Uses the Shell.Application COM object to enumerate ONLY File Explorer
+# folder windows, then closes them individually without touching the
+# desktop shell process.
+
+def _close_explorer_windows(display_name: str = 'File Explorer') -> str:
+    """Close all File Explorer folder windows WITHOUT killing the shell.
+
+    Uses Shell.Application COM to iterate open Explorer windows and
+    close each one via .Quit().  The desktop shell (taskbar, Start menu,
+    desktop icons) is *not* an Explorer window in this API, so it
+    remains untouched.
+
+    Returns a human-readable result string.
+    """
+    try:
+        import comtypes.client  # noqa: F811
+
+        shell = comtypes.client.CreateObject('Shell.Application')
+        windows = shell.Windows()
+        count = windows.Count
+
+        if count == 0:
+            return f'{display_name} has no open folder windows.'
+
+        closed = 0
+        # Iterate in reverse so closing doesn't shift indices
+        for i in range(count - 1, -1, -1):
+            try:
+                win = windows.Item(i)
+                if win is None:
+                    continue
+                win.Quit()
+                closed += 1
+            except Exception:
+                # Some windows may refuse; skip them
+                continue
+
+        if closed == 0:
+            return f'There aren\'t any open {display_name} windows.'
+        elif closed == 1:
+            return f'Closed 1 {display_name} window.'
+        else:
+            return f'Alright, closed {closed} {display_name} windows.'
+
+    except ImportError:
+        # comtypes not installed — fall back to pyautogui Alt+F4 approach
+        logger.warning('comtypes not available, trying PowerShell COM fallback')
+        return _close_explorer_windows_ps(display_name)
+    except Exception as e:
+        logger.error('COM-based explorer close failed: %s', e)
+        return _close_explorer_windows_ps(display_name)
+
+
+def _close_explorer_windows_ps(display_name: str = 'File Explorer') -> str:
+    """PowerShell fallback: close Explorer folder windows via COM script.
+
+    This is used when comtypes is not installed.  The PowerShell one-liner
+    achieves the same safe behaviour: enumerate Shell.Application.Windows()
+    and call Quit() on each, without touching the desktop shell.
+    """
+    try:
+        ps_script = (
+            '(New-Object -ComObject Shell.Application).Windows() '
+            '| ForEach-Object { $_.Quit() }'
+        )
+        result = subprocess.run(
+            ['powershell', '-NoProfile', '-NonInteractive', '-Command', ps_script],
+            capture_output=True, text=True, check=False,
+            creationflags=CREATE_NO_WINDOW,
+            timeout=10,
+        )
+
+        if result.returncode == 0:
+            logger.info('Closed Explorer windows via PowerShell COM fallback')
+            return f'Closed {display_name} windows.'
+
+        logger.warning('PS fallback returned rc=%d: %s', result.returncode, result.stderr)
+        return f'Could not close {display_name}. Try closing it manually.'
+
+    except subprocess.TimeoutExpired:
+        logger.error('PowerShell COM fallback timed out')
+        return f'Timed out trying to close {display_name}.'
+    except Exception as e:
+        logger.error('PowerShell COM fallback failed: %s', e)
+        return f'Could not close {display_name}: {str(e)}'
+
+
+def _recover_explorer_shell() -> str:
+    """Emergency: restart the Windows shell if it was accidentally killed.
+
+    This is a safety net — it starts a new explorer.exe process which
+    Windows automatically recognises as the shell restart.  The taskbar,
+    Start menu, and desktop icons will reappear.
+    """
+    try:
+        _safe_popen(['explorer.exe'])
+        logger.info('Explorer shell recovery launched')
+        return 'Alright, I\'ve restored the taskbar.'
+    except Exception as e:
+        logger.error('Shell recovery failed: %s', e)
+        return f'Could not restart the Windows shell: {str(e)}'
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -137,7 +256,7 @@ def set_volume(level: str) -> str:
         vol = device.EndpointVolume
         vol.SetMasterVolumeLevelScalar(target / 100.0, None)
 
-        return f'Volume set to {target} percent.'
+        return f'Alright, volume set to {target} percent.'
     except Exception as e:
         logger.error('set_volume failed: %s', e)
         return f'Could not set volume: {str(e)}'
@@ -151,10 +270,38 @@ def get_volume() -> str:
         vol = device.EndpointVolume
         current = round(vol.GetMasterVolumeLevelScalar() * 100)
 
-        return f'Volume is at {current} percent.'
+        return f'Volume\'s at {current} percent right now.'
     except Exception as e:
         logger.error('get_volume failed: %s', e)
         return f'Could not get volume: {str(e)}'
+
+
+def volume_up() -> str:
+    """Increase volume by 10 percent."""
+    try:
+        from pycaw.pycaw import AudioUtilities
+        device = AudioUtilities.GetSpeakers()
+        vol = device.EndpointVolume
+        current = vol.GetMasterVolumeLevelScalar()
+        new_level = min(1.0, current + 0.1)
+        vol.SetMasterVolumeLevelScalar(new_level, None)
+        return f'Sure, turning it up to {round(new_level * 100)} percent.'
+    except Exception as e:
+        return f'Could not increase volume: {str(e)}'
+
+
+def volume_down() -> str:
+    """Decrease volume by 10 percent."""
+    try:
+        from pycaw.pycaw import AudioUtilities
+        device = AudioUtilities.GetSpeakers()
+        vol = device.EndpointVolume
+        current = vol.GetMasterVolumeLevelScalar()
+        new_level = max(0.0, current - 0.1)
+        vol.SetMasterVolumeLevelScalar(new_level, None)
+        return f'Alright, turning it down to {round(new_level * 100)} percent.'
+    except Exception as e:
+        return f'Could not decrease volume: {str(e)}'
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -171,7 +318,7 @@ def set_brightness(level: str) -> str:
         cmd = f'PowerShell "(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1, {target})"'
         subprocess.run(cmd, shell=True, check=True,
                        creationflags=CREATE_NO_WINDOW)
-        return f'Brightness set to {target} percent.'
+        return 'Sure, brightness adjusted.'
     except Exception as e:
         logger.error('set_brightness failed: %s', e)
         return f'Could not set brightness: {str(e)}'
@@ -190,6 +337,38 @@ def get_brightness() -> str:
         return f'Could not get brightness: {str(e)}'
 
 
+def brightness_up() -> str:
+    """Increase brightness by 10 percent."""
+    try:
+        cmd_get = 'PowerShell "(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightness).CurrentBrightness"'
+        result = subprocess.run(cmd_get, shell=True, capture_output=True, text=True,
+                                check=True, creationflags=CREATE_NO_WINDOW)
+        current = int(result.stdout.strip() if result.stdout.strip() else '50')
+        new_level = min(100, current + 10)
+        cmd_set = f'PowerShell "(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1, {new_level})"'
+        subprocess.run(cmd_set, shell=True, check=True,
+                       creationflags=CREATE_NO_WINDOW)
+        return f'Setting brightness up to {new_level} percent.'
+    except Exception:
+        return 'Could not increase brightness.'
+
+
+def brightness_down() -> str:
+    """Decrease brightness by 10 percent."""
+    try:
+        cmd_get = 'PowerShell "(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightness).CurrentBrightness"'
+        result = subprocess.run(cmd_get, shell=True, capture_output=True, text=True,
+                                check=True, creationflags=CREATE_NO_WINDOW)
+        current = int(result.stdout.strip() if result.stdout.strip() else '50')
+        new_level = max(0, current - 10)
+        cmd_set = f'PowerShell "(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1, {new_level})"'
+        subprocess.run(cmd_set, shell=True, check=True,
+                       creationflags=CREATE_NO_WINDOW)
+        return f'Dimming it down to {new_level} percent.'
+    except Exception:
+        return 'Could not decrease brightness.'
+
+
 # ════════════════════════════════════════════════════════════════════
 # Mute / Audio Controls
 # ════════════════════════════════════════════════════════════════════
@@ -203,8 +382,8 @@ def mute_toggle() -> str:
         current_mute = vol.GetMute()
         vol.SetMute(not current_mute, None)
 
-        state = 'muted' if not current_mute else 'unmuted'
-        return f'System is now {state}.'
+        state = 'Alright, muted.' if not current_mute else 'Sure, unmuted.'
+        return state
     except Exception as e:
         logger.error('mute_toggle failed: %s', e)
         return f'Could not toggle mute: {str(e)}'
@@ -217,7 +396,7 @@ def mute() -> str:
         device = AudioUtilities.GetSpeakers()
         vol = device.EndpointVolume
         vol.SetMute(True, None)
-        return 'System is now muted.'
+        return 'Got it, muting the sound.'
     except Exception as e:
         logger.error('mute failed: %s', e)
         return f'Could not mute: {str(e)}'
@@ -230,7 +409,7 @@ def unmute() -> str:
         device = AudioUtilities.GetSpeakers()
         vol = device.EndpointVolume
         vol.SetMute(False, None)
-        return 'System is now unmuted.'
+        return 'Sound\'s back on.'
     except Exception as e:
         logger.error('unmute failed: %s', e)
         return f'Could not unmute: {str(e)}'
@@ -244,7 +423,7 @@ def media_play_pause() -> str:
     """Toggle media play/pause."""
     try:
         pyautogui.press('playpause')
-        return 'Toggled play pause.'
+        return 'Alright, toggled play-pause.'
     except Exception as e:
         logger.error('media_play_pause failed: %s', e)
         return f'Could not toggle play pause: {str(e)}'
@@ -254,7 +433,7 @@ def media_next() -> str:
     """Skip to next media track."""
     try:
         pyautogui.press('nexttrack')
-        return 'Skipped to next track.'
+        return 'Skipping forward.'
     except Exception as e:
         logger.error('media_next failed: %s', e)
         return f'Could not skip track: {str(e)}'
@@ -264,7 +443,7 @@ def media_previous() -> str:
     """Go to previous media track."""
     try:
         pyautogui.press('prevtrack')
-        return 'Went to previous track.'
+        return 'Alright, going back a track.'
     except Exception as e:
         logger.error('media_previous failed: %s', e)
         return f'Could not go to previous track: {str(e)}'
@@ -291,7 +470,8 @@ def open_app(app_name: str) -> str:
 
         name = safe_name.lower().strip()
         display_name = APP_PROPER_NAMES.get(name, app_name.title())
-        executable = APP_ALIASES.get(name)
+        db_aliases = get_aliases()
+        executable = db_aliases.get(name) or APP_ALIASES.get(name)
 
         if executable:
             if 'shell:AppsFolder' in executable:
@@ -300,12 +480,14 @@ def open_app(app_name: str) -> str:
                 # explorer window from inheriting our console.
                 proc = _safe_popen(['explorer.exe', executable])
                 if proc is None:
-                    return f'Could not launch {display_name}. The app may not be installed.'
-                return f'Opening {display_name}.'
+                    return f'It looks like {display_name} isn\'t installed.'
+                session_update('active_app', display_name)
+                return f'Opening up {display_name} for you.'
 
             elif executable.endswith(':') or '://' in executable:
                 # Protocol handler (whatsapp:, ms-settings:, https://...)
                 if _safe_startfile(executable):
+                    session_update('active_app', display_name)
                     return f'Opening {display_name}.'
                 return f'Could not open {display_name}.'
 
@@ -315,14 +497,17 @@ def open_app(app_name: str) -> str:
                 if proc is None:
                     # Fallback: try os.startfile which handles more edge cases
                     if _safe_startfile(executable):
+                        session_update('active_app', display_name)
                         return f'Opening {display_name}.'
                     return f'Could not find or launch {display_name}.'
+                session_update('active_app', display_name)
                 return f'Opening {display_name}.'
 
         else:
             # Unknown app — try os.startfile which delegates to Windows Shell
             if hasattr(os, 'startfile'):
                 if _safe_startfile(name):
+                    session_update('active_app', display_name)
                     return f'Trying to open {display_name}.'
 
             # Last resort: check PATH
@@ -331,6 +516,7 @@ def open_app(app_name: str) -> str:
             if resolved:
                 proc = _safe_popen([resolved])
                 if proc:
+                    session_update('active_app', display_name)
                     return f'Trying to open {display_name}.'
 
             return f'Could not find {display_name}. You can add it to the config.'
@@ -355,7 +541,8 @@ def close_app(app_name: str) -> str:
         exe_name = APP_PROCESS_MAP.get(name)
 
         if not exe_name:
-            path_or_name = APP_ALIASES.get(name, f'{name}.exe')
+            db_aliases = get_aliases()
+            path_or_name = db_aliases.get(name) or APP_ALIASES.get(name, f'{name}.exe')
             exe_name = os.path.basename(path_or_name)
 
             # Filter out protocol-style links
@@ -373,7 +560,8 @@ def close_active_window() -> str:
     """Close the currently active window using Alt+F4."""
     try:
         pyautogui.hotkey('alt', 'f4')
-        return 'Attempted to close the active window.'
+        session_update('active_app', None)
+        return 'Sure, closing the window.'
     except Exception as e:
         logger.error('close_active_window failed: %s', e)
         return f'Could not close active window: {str(e)}'
@@ -387,17 +575,25 @@ def take_screenshot() -> str:
     """Take a screenshot and save to Desktop."""
     try:
         desktop = os.path.join(os.path.expanduser('~'), 'Desktop')
+        # Fallback if Desktop doesn't exist
+        if not os.path.exists(desktop):
+            desktop = os.path.join(os.path.dirname(os.path.dirname(__file__)))
+        
         timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f'screenshot_{timestamp}.png'
         filepath = os.path.join(desktop, filename)
 
         screenshot = pyautogui.screenshot()
         screenshot.save(filepath)
-
-        return f'Screenshot saved to your Desktop as {filename}.'
+        
+        if os.path.exists(filepath):
+            logger.info('Screenshot saved to: %s', filepath)
+            return f'Got it! Screenshot saved to your desktop as {filename}.'
+        else:
+            return 'Hmm, something went wrong. The screenshot did not save.'
     except Exception as e:
         logger.error('take_screenshot failed: %s', e)
-        return f'Could not take screenshot: {str(e)}'
+        return 'Sorry, I had trouble capturing the screen.'
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -409,7 +605,7 @@ def get_time() -> str:
     try:
         now = datetime.datetime.now()
         time_str = now.strftime('%I:%M %p')
-        return f'The current time is {time_str}.'
+        return f'It\'s {time_str}.'
     except Exception as e:
         logger.error('get_time failed: %s', e)
         return f'Could not get the time: {str(e)}'
@@ -419,7 +615,7 @@ def get_date() -> str:
     """Get the current date."""
     try:
         now = datetime.datetime.now()
-        date_str = now.strftime('%A, %B %d, %Y')
+        date_str = now.strftime('%A, %B %d')
         return f'Today is {date_str}.'
     except Exception as e:
         logger.error('get_date failed: %s', e)
@@ -453,7 +649,7 @@ def cancel_shutdown() -> str:
     try:
         subprocess.run(['shutdown', '/a'], check=True,
                        creationflags=CREATE_NO_WINDOW)
-        return 'Shutdown cancelled.'
+        return 'Alright, shutdown cancelled.'
     except Exception as e:
         logger.error('cancel_shutdown failed: %s', e)
         return f'Could not cancel shutdown: {str(e)}'
@@ -482,7 +678,7 @@ def lock_screen() -> str:
     try:
         # Use ctypes for more reliable lock (avoids subprocess window flash)
         ctypes.windll.user32.LockWorkStation()
-        return 'Screen locked.'
+        return 'Got it, screen locked.'
     except Exception as e:
         logger.error('lock_screen failed: %s', e)
         return f'Could not lock screen: {str(e)}'
@@ -510,7 +706,7 @@ def get_system_status() -> str:
         import psutil
         cpu = psutil.cpu_percent(interval=0.1)
         ram = psutil.virtual_memory().percent
-        return f'Your CPU usage is at {cpu} percent and your RAM usage is at {ram} percent.'
+        return f'CPU\'s at {cpu} percent, RAM\'s at {ram}.'
     except Exception as e:
         logger.error('get_system_status failed: %s', e)
         return f'Could not get system status: {str(e)}'
@@ -523,6 +719,8 @@ def get_system_status() -> str:
 TOOLS = {
     'set_volume': set_volume,
     'get_volume': get_volume,
+    'volume_up': volume_up,
+    'volume_down': volume_down,
     'mute': mute,
     'unmute': unmute,
     'mute_toggle': mute_toggle,
@@ -532,6 +730,8 @@ TOOLS = {
     'open_app': open_app,
     'close_app': close_app,
     'close_active_window': close_active_window,
+    'close_explorer_windows': _close_explorer_windows,
+    'recover_explorer_shell': _recover_explorer_shell,
     'take_screenshot': take_screenshot,
     'get_time': get_time,
     'get_date': get_date,
@@ -543,4 +743,6 @@ TOOLS = {
     'get_system_status': get_system_status,
     'set_brightness': set_brightness,
     'get_brightness': get_brightness,
+    'brightness_up': brightness_up,
+    'brightness_down': brightness_down,
 }
