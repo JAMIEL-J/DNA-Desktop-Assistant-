@@ -12,6 +12,7 @@ _state = {
     'last_df': None,
     'last_command': None,
     'is_listening': False,
+    'is_running': True,
 }
 
 

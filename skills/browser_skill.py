@@ -19,7 +19,7 @@ def open_url(url: str) -> str:
             preserved_url = 'https://' + preserved_url
             
         webbrowser.open(preserved_url)
-        return f'Opening {url}.'
+        return 'Sure, opening that website for you.'
     except Exception as e:
         logger.error('open_url failed: %s', e)
         return f'Could not open the website: {str(e)}'
@@ -31,7 +31,7 @@ def search_google(query: str) -> str:
         encoded_query = urllib.parse.quote(query)
         url = f'https://www.google.com/search?q={encoded_query}'
         webbrowser.open(url)
-        return f'Searching Google for {query}.'
+        return 'Searching Google for you now.'
     except Exception as e:
         logger.error('search_google failed: %s', e)
         return f'Could not search Google: {str(e)}'
@@ -43,7 +43,7 @@ def search_youtube(query: str) -> str:
         encoded_query = urllib.parse.quote(query)
         url = f'https://www.youtube.com/results?search_query={encoded_query}'
         webbrowser.open(url)
-        return f'Searching YouTube for {query}.'
+        return 'Alright, looking that up on YouTube.'
     except Exception as e:
         logger.error('search_youtube failed: %s', e)
         return f'Could not search YouTube: {str(e)}'
