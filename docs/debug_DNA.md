@@ -264,6 +264,12 @@ subprocess.Popen(
 | `database is locked` | Concurrent writes from multiple threads | Use `threading.Lock()` around all DB writes |
 | `OperationalError: no such table` | Migration not run | Create tables on first connection with `CREATE IF NOT EXISTS` |
 
+### Phase 6: Session State & Context Resolver
+| Error | Likely Cause | Fix |
+|-------|-------------|-----|
+| Regex matches 'it', 'this' rather than app name | Context not resolved before routing | Call `resolve_pronouns()` inside `intent_router.route()` first |
+| Pronoun replacement failing | Ambiguous pronouns targeting both files and apps | Add heuristic in `context_resolver.py` to prioritize `active_app` for actions like 'close' and `active_file` for 'analyze' |
+
 ### Phase 9: DuckDB + NL2SQL
 | Error | Likely Cause | Fix |
 |-------|-------------|-----|
@@ -306,4 +312,4 @@ subprocess.Popen(
 
 ---
 
-*Last updated: 2026-04-05*
+*Last updated: 2026-04-07*

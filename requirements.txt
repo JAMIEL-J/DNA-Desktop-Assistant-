@@ -12,6 +12,7 @@ faster-whisper>=1.0.0
 pyautogui>=0.9.54
 pygetwindow>=0.0.9
 pycaw>=0.0.1; sys_platform == "win32"
+comtypes>=1.3.0; sys_platform == "win32"  # COM automation for safe Explorer window management
 psutil>=5.9.0
 
 

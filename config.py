@@ -20,12 +20,16 @@ WHISPER_DEVICE = os.getenv('WHISPER_DEVICE', 'cpu')
 WAKE_WORD_MODEL = os.getenv('WAKE_WORD_MODEL', 'hey_jarvis')
 WAKE_WORD_THRESHOLD = float(os.getenv('WAKE_WORD_THRESHOLD', '0.5'))
 WAKE_WORD_FRAMEWORK = os.getenv('WAKE_WORD_FRAMEWORK', 'onnx')
-OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'qwen3.5:2b')
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY', '')
+CLOUD_LLM_MODEL = os.getenv('CLOUD_LLM_MODEL', 'gemini-1.5-flash')
+OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'gemma4:e2b')
+OLLAMA_VISION_MODEL = os.getenv('OLLAMA_VISION_MODEL', 'moondream')
 OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://localhost:11434/api/chat')
-OLLAMA_TIMEOUT = float(os.getenv('OLLAMA_TIMEOUT', '20'))
+OLLAMA_TIMEOUT = float(os.getenv('OLLAMA_TIMEOUT', '45'))
 OLLAMA_CTX_NORMAL = int(os.getenv('OLLAMA_CTX_NORMAL', '2048'))
-OLLAMA_CTX_THINKING = int(os.getenv('OLLAMA_CTX_THINKING', '4096'))
-OLLAMA_TEMPERATURE = float(os.getenv('OLLAMA_TEMPERATURE', '0.1'))
+OLLAMA_CTX_THINKING = int(os.getenv('OLLAMA_CTX_THINKING', '2048'))
+OLLAMA_TEMPERATURE = float(os.getenv('OLLAMA_TEMPERATURE', '0.2'))
+OLLAMA_KEEP_ALIVE = os.getenv('OLLAMA_KEEP_ALIVE', '1m')
 
 # TTS Settings
 PIPER_VOICE = os.getenv('PIPER_VOICE', 'en_US-lessac-medium')
@@ -52,6 +56,8 @@ _CHROME_PATH = str(_USER_LOCAL_CHROME) if _USER_LOCAL_CHROME.exists() else str(_
 _EDGE_PATH_X86 = r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
 _EDGE_PATH = r'C:\Program Files\Microsoft\Edge\Application\msedge.exe'
 _FINAL_EDGE = _EDGE_PATH_X86 if Path(_EDGE_PATH_X86).exists() else _EDGE_PATH
+
+_NOTION_PATH = Path(os.getenv('LOCALAPPDATA', '')) / 'Programs' / 'Notion' / 'Notion.exe'
 
 APP_ALIASES = {
     'notepad': 'notepad.exe',
@@ -113,9 +119,11 @@ APP_ALIASES = {
     'vlc': r'C:\Program Files (x86)\VideoLAN\VLC\vlc.exe',
     'vlc media player': r'C:\Program Files (x86)\VideoLAN\VLC\vlc.exe',
     'vlc player': r'C:\Program Files (x86)\VideoLAN\VLC\vlc.exe',
-    'vlcmediaplayer': r'C:\Program Files (x86)\VideoLAN\VLC\vlc.exe',
+    'vlcmediaplayer': r'C:\Program Files\VideoLAN\VLC\vlc.exe',
     'winzip': r'C:\Program Files (x86)\WinZip\WINZIP32.EXE',
     'win zip': r'C:\Program Files (x86)\WinZip\WINZIP32.EXE',
+    'notion': str(_NOTION_PATH),
+    'potion': str(_NOTION_PATH),
 }
 
 # Maps aliases to their properly capitalized/pronounced names for STT/TTS replies
@@ -130,6 +138,8 @@ APP_PROPER_NAMES = {
     'cap cut': 'CapCut',
     'ana conda': 'Anaconda',
     'table': 'Tableau',
+    'notion': 'Notion',
+    'potion': 'Notion',
 }
 
 # Maps aliases to their actual Windows process names for taskkill
@@ -170,12 +180,14 @@ APP_PROCESS_MAP = {
     'cmd': 'cmd.exe',
     'command prompt': 'cmd.exe',
     'terminal': 'wt.exe',
+    'notion': 'Notion.exe',
+    'potion': 'Notion.exe',
 }
 
 
 # Common Folder Paths (Windows)
 FOLDER_ALIASES = {
-    'downloads': Path.home() / 'Downloads',
+    'downloads': Path('D:\\'),
     'desktop': Path.home() / 'Desktop',
     'documents': Path.home() / 'Documents',
     'music': Path.home() / 'Music',
@@ -185,3 +197,9 @@ FOLDER_ALIASES = {
     # Add your CUSTOM FOLDERS here:
     # 'projects': r'D:\Projects',
 }
+
+# Job Search Settings
+JOBS_ROLES        = ["data analyst", "data science", "business analyst"]
+JOBS_LOCATION     = "South India"
+JOBS_MAX_AGE_DAYS = 7       # only show jobs posted in last 7 days
+JOBS_ON_STARTUP   = True    # check for new jobs every morning on startup

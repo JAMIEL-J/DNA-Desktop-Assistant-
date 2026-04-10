@@ -16,8 +16,8 @@ Owner     : Jamiel J. — single user, personal tool
 Hardware  : Intel i3-1134G4 (or N305 class), 8GB RAM, no GPU, Intel UHD 128MB
 Repo      : github.com/JAMIEL-J/DNA-Voice-Assistant
 
-Current Phase : Phase 6: Session state + pronoun resolution (v2)
-Current Task  : Creating Context Resolver to track active file/app and resolve pronouns (it, this, that) before intention routing.
+Current Phase : DNA v2 Finished!
+Current Task  : All initial architecture loops completely established and hardened.
 ```
 
 **What DNA does:**
@@ -503,15 +503,15 @@ Never auto-execute. Always confirm with user before saving a skill snippet.
 | 3 | Intent router — all simple commands without LLM | [x] |
 | 4 | LLM agent — complex file and DA commands | [x] |
 | 5 | SQLite memory + command logging | [x] |
-| 6 | Session state + pronoun resolution (v2) | [/] |
-| 7 | Plan executor — multi-step commands (v2) | [ ] |
-| 8 | Skill registry — auto-discovery (v2) | [ ] |
-| 9 | DuckDB + NL2SQL / NL2Py data router (v2) | [ ] |
-| 10 | Vision skill — Moondream (v2) | [ ] |
-| 11 | Proactive monitor — CPU / download alerts (v2) | [ ] |
-| 12 | Learning system — preferences + aliases (v2) | [ ] |
-| 13 | Tray icon + toast notifications (UI) | [ ] |
-| 14 | Stability, edge cases, error hardening | [ ] |
+| 6 | Session state + pronoun resolution (v2) | [x] |
+| 7 | Plan executor — multi-step commands (v2) | [x] |
+| 8 | Skill registry — auto-discovery (v2) | [x] |
+| 9 | DuckDB + NL2SQL / NL2Py data router (v2) | [x] |
+| 10 | Vision skill — Moondream (v2) | [x] |
+| 11 | Proactive monitor — CPU / download alerts (v2) | [x] |
+| 12 | Learning system — preferences + aliases (v2) | [x] |
+| 13 | Tray icon + toast notifications (UI) | [x] |
+| 14 | Stability, edge cases, error hardening | [x] |
 
 > Update [ ] to [x] as phases complete. Update `Current Phase` at the top of this prompt before each session.
 
@@ -562,3 +562,63 @@ Never auto-execute. Always confirm with user before saving a skill snippet.
 - Created `init_db()` and tables for `conversation`, `command_log`, `preferences`, and `aliases`.
 - Hooked up `log_command(command, result, status)` inside `dna_main.py` main loop.
 - Automatically handles success/error distinction to populate DB log correctly.
+
+## PHASE 6 COMPLETION NOTES (2026-04-07)
+
+- Added `pipeline/context_resolver.py` to resolve pronouns (it, this, that) within user commands using session state.
+- Hooked `resolve_pronouns()` into `pipeline/intent_router.py` before matching simple regex intents or falling back to the LLM.
+- Hooked `core.session.update('active_app', name)` inside `skills/system_skill.py` to keep track of active applications.
+- Hooked `core.session.update('active_file', name)` inside `skills/file_skill.py` to log folders and files the user opens or queries.
+
+## PHASE 7 COMPLETION NOTES (2026-04-07)
+
+- Created `pipeline/plan_executor.py` explicitly for executing multi-step LLM JSON plans.
+- Moved `_validate_tool_safety`, `_invoke_tool`, and `_execute_plan` heavily into `plan_executor.py`.
+- Plumbed `execute_plan` and `invoke_tool` directly into `handle_complex_command` in `pipeline/llm_agent.py`.
+
+## PHASE 8 COMPLETION NOTES (2026-04-07)
+
+- Added `core/skill_registry.py` to dynamically discover and aggregate `TOOLS` from all files matching `*_skill.py` across the `/skills` directory.
+- Hooked `discover_skills()` natively into the startup sequence of `dna_main.py` so tool sets are resolved immediately.
+- Erased hardcoded imports inside `pipeline/intent_router.py` and connected it gracefully to `get_tool_map()`.
+- Refactored stateless utility functions (`_volume_up`, `_volume_down`, `_brightness_up`, `_brightness_down`) structurally from the intent router into `skills/system_skill.py` extending its export to truly house all low-level Windows functions.
+
+## PHASE 9 COMPLETION NOTES (2026-04-07)
+
+- Contributed `skills/data_skill.py` carrying the `analyze_data` capability.
+- Programmed an intelligent logic router mapping queries against >100K CSV rows toward `_duckdb_analysis`, maintaining `<100K` datasets gracefully within `_pandas_analysis`.
+- Added tight NLP schema injection pipelines for Ollama to construct valid Python / SQL queries automatically.
+- Integrated safety checks into `NL2Py` limiting `exec()` behavior entirely and blacklisting operations such as file-reads and subprocess spawns.
+
+## PHASE 10 COMPLETION NOTES (2026-04-07)
+
+- Crafted `skills/vision_skill.py` establishing `read_screen` to capture and relay screen understanding visually through Ollama.
+- Introduced configuration parameter `OLLAMA_VISION_MODEL` (defaulting to `moondream`) inside `config.py`.
+- Utilized base64 encoded streams across local REST requests directly to localhost instead of CLI interfaces to safely encapsulate requests safely.
+
+## PHASE 11 COMPLETION NOTES (2026-04-07)
+
+- Crafted `core/proactive.py` equipped with separated daemon threads for CPU monitoring and Downloads folder monitoring respectively.
+- Interrogates SQLite and current context `get('is_listening')` dynamically prior to interacting over TTS effectively preserving the conversation's state.
+- Cooldown thresholds incorporated efficiently: limits CPU repetition to 5-minute spans and downloads effectively mapped dynamically.
+- `start_proactive_monitors` is formally wired within `dna_main`'s init sequence.
+
+## PHASE 12 COMPLETION NOTES (2026-04-07)
+
+- Crafted `pipeline/memory.py` wrappers targeting the `preferences` and `aliases` SQLite tables natively.
+- Developed `skills/learning_skill.py` unlocking explicit preferences teaching allowing the user to dictate settings organically.
+- Seamlessly plumbed `get_aliases()` lookups globally into `_resolve_folder` and `open_app`/`close_app` workflows.
+- Injected `get_preferences()` natively within `_build_system_prompt` informing Ollama proactively of any established parameters unconditionally!
+
+## PHASE 13 COMPLETION NOTES (2026-04-07)
+
+- Crafted `ui/toast.py` wrapping the `plyer` library to invoke standard Windows 11 system notifications gracefully.
+- Added `ui/tray.py` operating under a daemon polling routine through `pystray`. Safely wired instances back into `dna_main.py` and `core/proactive.py`.
+- Established a visual cue (`green` / `gray` mapping) communicating dynamic microphone listening states silently mapping back from `core/session.py`.
+
+## PHASE 14 COMPLETION NOTES (2026-04-07)
+
+- Injected a stateful `is_running` lifecycle flag across the `core/session.py` architecture.
+- Seamlessly threaded `ui/tray.py`'s context Exit hook into the global ecosystem allowing DNA to collapse itself elegantly dynamically.
+- `wait_for_wake_word` natively checks the boolean status flag to stop cleanly returning rather than forcefully terminating over blocking event polls.
+- Caught gracefully all `KeyboardInterrupt` loops to permit organic console-level Ctrl+C shutdowns seamlessly syncing to the UI instance safely breaking all daemon threads passively. All tasks achieved perfectly.

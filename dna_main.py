@@ -27,7 +27,11 @@ def main():
     from pipeline.tts import speak
     from pipeline.intent_router import route
     from pipeline.memory import init_db, log_command
-    from core.session import update
+    from core.session import update as session_update, get as session_get
+    from core.skill_registry import discover_skills
+    from core.proactive import start_proactive_monitors
+    from ui.tray import start_tray
+    from core.personality import get_wake_greeting
 
     logger.info('=' * 50)
     logger.info('  DNA Voice Assistant Starting...')
@@ -35,21 +39,37 @@ def main():
 
     # Confirm TTS is working with a startup greeting
     speak('DNA is online. Say hey Jarvis to wake me up.')
-    logger.info('Startup complete. Entering main loop.')
     init_db()
+    discover_skills()
+    start_proactive_monitors()
+    start_tray()
 
-    while True:
+    # ── Morning job check (silent if nothing new) ──
+    try:
+        from config import JOBS_ON_STARTUP
+        if JOBS_ON_STARTUP:
+            from skills.jobs_skill import morning_job_check
+            job_update = morning_job_check()
+            if job_update:
+                speak(job_update)
+    except Exception as e:
+        logger.debug('Morning job check skipped: %s', e)
+
+    while session_get('is_running', True):
         try:
             # Step 1: Wait for wake word
-            update('is_listening', False)
+            session_update('is_listening', False)
             detected = wait_for_wake_word()
+
+            if not session_get('is_running', True):
+                break
 
             if not detected:
                 continue
 
             # Step 2: Play acknowledgment and record command
-            update('is_listening', True)
-            speak('Yes?')
+            session_update('is_listening', True)
+            speak(get_wake_greeting())
 
             audio = listen_and_record()
             if audio is None or len(audio) == 0:
@@ -63,7 +83,7 @@ def main():
                 continue
 
             logger.info('Command: "%s"', text)
-            update('last_command', text)
+            session_update('last_command', text)
 
             # Step 4: Route to tool
             result = route(text)
@@ -81,7 +101,8 @@ def main():
             speak(result)
 
         except KeyboardInterrupt:
-            logger.info('Shutting down DNA...')
+            logger.info('Shutting down DNA via KeyboardInterrupt...')
+            session_update('is_running', False)
             speak('Goodbye.')
             break
         except Exception as e:
