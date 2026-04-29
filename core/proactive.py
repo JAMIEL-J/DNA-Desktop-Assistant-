@@ -11,6 +11,7 @@ from pathlib import Path
 import psutil
 
 from core.session import get as session_get
+from config import DOWNLOADS_DIR
 from pipeline.tts import speak_async
 from ui.toast import show_toast
 
@@ -48,7 +49,10 @@ def _monitor_cpu():
                 if (now - _last_cpu_alert) > CPU_ALERT_COOLDOWN:
                     logger.warning("High CPU detected: %.1f%%", cpu)
                     
-                    msg = f"Warning. Your CPU usage is unusually high, at {int(cpu)} percent."
+                    msg = (
+                        f"Sir, your CPU usage is running high at {int(cpu)} percent. "
+                        "Would you like me to list heavy processes?"
+                    )
                     show_toast("High CPU Usage", f"CPU utilization is at {int(cpu)}%")
 
                     # Only alert if the user isn't actively speaking/listening to DNA
@@ -66,11 +70,13 @@ def _monitor_cpu():
 def _monitor_downloads():
     """Monitor Downloads folder for completed files."""
     global _last_download_alert
-    downloads_dir = Path.home() / 'Downloads'
+    downloads_dir = DOWNLOADS_DIR
     
     if not downloads_dir.exists():
         logger.warning('Downloads directory not found (%s). Monitor disabled.', downloads_dir)
         return
+
+    logger.info('Monitoring downloads directory: %s', downloads_dir)
 
     def _get_files() -> set[str]:
         try:
@@ -102,10 +108,10 @@ def _monitor_downloads():
                 if (now - _last_download_alert) > DOWNLOAD_ALERT_COOLDOWN:
                     if len(new_files) == 1:
                         new_name = Path(list(new_files)[0]).name
-                        msg = f"Your download is complete: {new_name}"
+                        msg = f"Sir, your download is complete: {new_name}."
                         show_toast("Download Complete", new_name)
                     else:
-                        msg = f"{len(new_files)} new files have finished downloading."
+                        msg = f"Sir, {len(new_files)} new files have finished downloading."
                         show_toast("Downloads Complete", f"{len(new_files)} files have finished downloading.")
                         
                     if not session_get('is_listening'):

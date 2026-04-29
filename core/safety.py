@@ -51,7 +51,7 @@ DANGEROUS_TOOLS = {
     'shutdown_computer',
     'restart_computer',
     'empty_recycle_bin',
-    'lock_screen',
+    'kill_process',
 }
 
 # Tools the LLM is NEVER allowed to call (even if it tries)
@@ -198,10 +198,10 @@ def get_danger_warning(tool_name: str) -> str:
             'This action cannot be undone. '
             'Say "confirm" to proceed or "cancel" to abort.'
         ),
-        'lock_screen': (
-            '⚠️ NOTE: This will lock your screen. '
-            'You will need to enter your password to unlock. '
-            'Say "confirm lock" to proceed or "cancel" to abort.'
+        'kill_process': (
+            '⚠️ WARNING: This will terminate a running process. '
+            'Unsaved work in that app may be lost. '
+            'Say "confirm kill" to proceed or "cancel" to abort.'
         ),
     }
     return warnings.get(tool_name, f'⚠️ WARNING: {tool_name} requires confirmation.')

@@ -8,10 +8,49 @@ load_dotenv()
 # Base Directory
 BASE_DIR = Path(__file__).resolve().parent
 
+
+def _resolve_downloads_dir() -> Path:
+    """Resolve the user's real Downloads directory on Windows with fallbacks."""
+    candidates: list[Path] = []
+
+    if os.name == 'nt':
+        try:
+            import winreg  # stdlib on Windows
+
+            key_path = r'Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders'
+            guid = '{374DE290-123F-4565-9164-39C4925E467B}'
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+                value, _ = winreg.QueryValueEx(key, guid)
+                if value:
+                    candidates.append(Path(os.path.expandvars(value)))
+        except Exception:
+            pass
+
+    # Common defaults and redirected OneDrive path.
+    candidates.extend([
+        Path.home() / 'Downloads',
+        Path(os.getenv('USERPROFILE', '')) / 'Downloads',
+        Path.home() / 'OneDrive' / 'Downloads',
+    ])
+
+    # Fallbacks for systems where downloads are redirected to drive roots.
+    candidates.extend([
+        Path('D:\\Downloads'),
+        Path('D:\\'),
+        Path('E:\\Downloads'),
+    ])
+
+    for candidate in candidates:
+        if str(candidate).strip() and candidate.exists():
+            return candidate
+
+    return Path.home()
+
 # Pipeline Settings
 LOG_PATH = BASE_DIR / os.getenv('LOG_PATH', 'logs/dna.log')
 DB_PATH = BASE_DIR / os.getenv('DB_PATH', 'data/dna_memory.db')
 DUCK_PATH = BASE_DIR / os.getenv('DUCK_PATH', 'data/dna_duck.db')
+DOWNLOADS_DIR = _resolve_downloads_dir()
 
 # Model Settings
 WHISPER_MODEL = os.getenv('WHISPER_MODEL', 'base')
@@ -41,8 +80,90 @@ PIPER_MODEL_JSON = PIPER_MODEL_DIR / f'{PIPER_VOICE}.onnx.json'
 SAMPLE_RATE = 16000
 CHANNELS = 1
 RECORD_SECONDS = 5
-SILENCE_THRESHOLD = 0.01
+SILENCE_THRESHOLD = float(os.getenv('SILENCE_THRESHOLD', '0.006'))
 SILENCE_DURATION = 1.5
+END_OF_SPEECH_SILENCE = float(os.getenv('END_OF_SPEECH_SILENCE', '1.2'))
+MIN_SPEECH_SECONDS = float(os.getenv('MIN_SPEECH_SECONDS', '0.7'))
+MIC_CHUNK_SECONDS = float(os.getenv('MIC_CHUNK_SECONDS', '0.12'))
+MIC_PRE_ROLL_SECONDS = float(os.getenv('MIC_PRE_ROLL_SECONDS', '0.30'))
+
+# Session Mode Settings
+AUTO_SLEEP_TIMEOUT = int(os.getenv('AUTO_SLEEP_TIMEOUT', '300'))
+SHORT_TRANSCRIPT_MIN = int(os.getenv('SHORT_TRANSCRIPT_MIN', '1'))
+CONFIDENCE_THRESHOLD = float(os.getenv('CONFIDENCE_THRESHOLD', '-1.4'))
+TTS_SUPPRESS_MS = int(os.getenv('TTS_SUPPRESS_MS', '500'))
+ACTIVE_LISTEN_SECONDS = float(os.getenv('ACTIVE_LISTEN_SECONDS', '6.5'))
+ACTIVE_RETRY_SECONDS = float(os.getenv('ACTIVE_RETRY_SECONDS', '5.0'))
+STT_FAST_BEAM_SIZE = int(os.getenv('STT_FAST_BEAM_SIZE', '2'))
+STT_ROBUST_BEAM_SIZE = int(os.getenv('STT_ROBUST_BEAM_SIZE', '5'))
+
+# Suggestion Engine Settings
+SUGGESTIONS_ENABLED = os.getenv('SUGGESTIONS_ENABLED', 'true').strip().lower() in {'1', 'true', 'yes', 'on'}
+STARTUP_SUGGESTIONS_ENABLED = os.getenv('STARTUP_SUGGESTIONS_ENABLED', 'true').strip().lower() in {'1', 'true', 'yes', 'on'}
+STARTUP_SUGGESTION_MIN_COUNT = int(os.getenv('STARTUP_SUGGESTION_MIN_COUNT', '3'))
+STARTUP_SUGGESTION_MIN_CONFIDENCE = float(os.getenv('STARTUP_SUGGESTION_MIN_CONFIDENCE', '0.55'))
+STARTUP_SUGGESTION_COOLDOWN_MINUTES = int(os.getenv('STARTUP_SUGGESTION_COOLDOWN_MINUTES', '180'))
+
+# Conversational pacing controls for friendlier butler delivery.
+TTS_HUMAN_PAUSE_MIN_SEC = float(os.getenv('TTS_HUMAN_PAUSE_MIN_SEC', '0.18'))
+TTS_HUMAN_PAUSE_MAX_SEC = float(os.getenv('TTS_HUMAN_PAUSE_MAX_SEC', '0.34'))
+
+WAKE_RESPONSES = [
+    'Yes sir, I am listening.',
+    'At your service, sir.',
+    'Please go ahead, sir.',
+    'I am listening, sir.',
+    'Ready when you are, sir.',
+    'Please continue, sir.',
+]
+
+SLEEP_RESPONSES = [
+    'Understood, sir. I will remain on standby.',
+    'Very well, sir. Call me when needed.',
+    'As you wish, sir. I will stay quiet for now.',
+    'Of course, sir. Stepping back.',
+]
+
+TIMEOUT_RESPONSES = [
+    'I will give you some quiet time, sir.',
+    'I am here whenever you need me, sir.',
+    'Standing by, sir.',
+]
+
+DISMISS_RESPONSES = [
+    'Understood, sir. I am stepping back.',
+    'Certainly, sir. Going quiet now.',
+    'As requested, sir. I will wait for your call.',
+    'Very well, sir. I remain at your service.',
+]
+
+# Workflow Templates
+# Declarative plans executed by the plan executor when the trigger phrase matches.
+WORKFLOWS = {
+    'work mode': [
+        {'tool': 'speak', 'args': {'text': 'Activating work mode. Let me get you set up.'}},
+        {'tool': 'open_app', 'args': {'app_name': 'vscode'}},
+        {'tool': 'announce_app_opening', 'args': {'app_name': 'VS Code'}},
+        {'tool': 'open_app', 'args': {'app_name': 'chrome'}},
+        {'tool': 'announce_app_opening', 'args': {'app_name': 'Chrome'}},
+        {'tool': 'set_volume', 'args': {'level': '40'}},
+        {'tool': 'gather_work_context', 'args': {}},
+    ],
+    'focus mode': [
+        {'tool': 'speak', 'args': {'text': 'Entering focus mode. Minimizing distractions.'}},
+        {'tool': 'open_app', 'args': {'app_name': 'vscode'}},
+        {'tool': 'announce_app_opening', 'args': {'app_name': 'VS Code'}},
+        {'tool': 'set_volume', 'args': {'level': '30'}},
+    ],
+    'end work': [
+        {'tool': 'speak', 'args': {'text': 'Wrapping up your work session. Taking a screenshot for your records.'}},
+        {'tool': 'take_screenshot', 'args': {}},
+        {'tool': 'close_app', 'args': {'app_name': 'vscode'}},
+        {'tool': 'speak', 'args': {'text': 'VS Code closed.'}},
+        {'tool': 'set_volume', 'args': {'level': '60'}},
+        {'tool': 'speak', 'args': {'text': 'Great job today. See you next time.'}},
+    ],
+}
 
 # Wake Word Audio Settings
 WAKE_CHUNK_SIZE = 1280  # 80ms at 16kHz — openwakeword expects this
@@ -187,7 +308,7 @@ APP_PROCESS_MAP = {
 
 # Common Folder Paths (Windows)
 FOLDER_ALIASES = {
-    'downloads': Path('D:\\'),
+    'downloads': DOWNLOADS_DIR,
     'desktop': Path.home() / 'Desktop',
     'documents': Path.home() / 'Documents',
     'music': Path.home() / 'Music',

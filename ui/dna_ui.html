@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DNA — Desktop Natural Assistant</title>
+<script src="three.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #080c10;
+    --bg2: #0d1219;
+    --bg3: #111820;
+    --border: rgba(255,255,255,0.06);
+    --border-active: rgba(100,200,255,0.25);
+    --text: #e8edf2;
+    --text-muted: rgba(232,237,242,0.45);
+    --accent: #4af0c8;
+    --accent2: #38b4ff;
+    --accent3: #a78bfa;
+    --danger: #f87171;
+    --mono: 'Space Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+    --node-core: rgba(74,240,200,0.9);
+    --node-secondary: rgba(56,180,255,0.7);
+    --node-tertiary: rgba(167,139,250,0.6);
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    overflow: hidden;
+  }
+
+  /* ── LAYOUT ── */
+  .shell {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 120px;
+    height: 100vh;
+    gap: 0;
+    position: relative;
+  }
+
+  /* ── LEFT PANEL ── */
+  .panel-left {
+    grid-row: 1 / 3;
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 24px 0;
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 240px;
+    z-index: 10;
+  }
+
+  .panel-header {
+    padding: 0 20px 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+
+  .dna-logo {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .dna-title {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+    letter-spacing: -0.01em;
+  }
+
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 20px;
+    margin-bottom: 24px;
+  }
+
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    position: relative;
+  }
+
+  .status-dot::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    background: var(--accent);
+    opacity: 0.3;
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { transform: scale(1); opacity: 0.3; }
+    50% { transform: scale(1.8); opacity: 0; }
+  }
+
+  .status-text {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    text-transform: uppercase;
+  }
+
+  .status-dot.sleeping { background: var(--text-muted); }
+  .status-dot.sleeping::after { display: none; }
+  .status-text.sleeping { color: var(--text-muted); }
+
+  /* ── METRIC CARDS ── */
+  .section-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.15em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    padding: 0 20px;
+    margin-bottom: 10px;
+  }
+
+  .metric-card {
+    margin: 0 12px 8px;
+    padding: 12px 14px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    transition: border-color 0.3s;
+  }
+
+  .metric-card:hover { border-color: var(--border-active); }
+
+  .metric-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-family: var(--mono);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .metric-value {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1;
+  }
+
+  .metric-value .unit {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin-left: 3px;
+  }
+
+  .metric-bar-track {
+    height: 3px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 2px;
+    margin-top: 8px;
+    overflow: hidden;
+  }
+
+  .metric-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: var(--accent);
+    transition: width 0.8s ease;
+  }
+
+  .metric-bar-fill.warn { background: #fbbf24; }
+  .metric-bar-fill.danger { background: var(--danger); }
+
+  /* ── APPS LIST ── */
+  .apps-section { margin-top: 16px; }
+
+  .app-row {
+    display: flex;
+    align-items: center;
+    padding: 8px 20px;
+    gap: 10px;
+    transition: background 0.15s;
+  }
+
+  .app-row:hover { background: rgba(255,255,255,0.03); }
+
+  .app-rank {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text-muted);
+    width: 14px;
+    flex-shrink: 0;
+  }
+
+  .app-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .app-name {
+    flex: 1;
+    font-size: 12px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .app-cpu {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 16px 20px;
+  }
+
+  .total-apps {
+    padding: 0 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .total-label {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .total-count {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--accent2);
+  }
+
+  /* ── GLOBE CANVAS ── */
+  .globe-area {
+    position: relative;
+    overflow: hidden;
+    background: radial-gradient(ellipse at 50% 50%, #0e1929 0%, var(--bg) 70%);
+  }
+
+  #globe-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  /* Ring overlay around globe */
+  .globe-ring {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.4s;
+  }
+
+  .globe-ring.r1 {
+    width: 320px;
+    height: 320px;
+    border: 1px solid rgba(74,240,200,0.12);
+  }
+
+  .globe-ring.r2 {
+    width: 420px;
+    height: 420px;
+    border: 1px solid rgba(56,180,255,0.07);
+  }
+
+  .globe-ring.r3 {
+    width: 520px;
+    height: 520px;
+    border: 1px solid rgba(167,139,250,0.05);
+  }
+
+  .globe-ring.active { opacity: 1; }
+
+  /* Mode badge */
+  .mode-badge {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    padding: 5px 14px;
+    border-radius: 100px;
+    border: 1px solid var(--border);
+    background: rgba(8,12,16,0.8);
+    color: var(--text-muted);
+    backdrop-filter: blur(8px);
+    transition: all 0.4s;
+    white-space: nowrap;
+  }
+
+  .mode-badge.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    box-shadow: 0 0 20px rgba(74,240,200,0.1);
+  }
+
+  /* ── RIGHT PANEL ── */
+  .panel-right {
+    grid-row: 1 / 3;
+    background: var(--bg2);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 24px 0;
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 240px;
+    z-index: 10;
+  }
+
+  /* Waveform visualizer */
+  .wave-section {
+    padding: 0 20px;
+    margin-bottom: 20px;
+  }
+
+  #wave-canvas {
+    width: 100%;
+    height: 48px;
+    display: block;
+  }
+
+  /* Session log */
+  .log-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 12px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  .log-entry {
+    padding: 8px 10px;
+    margin-bottom: 4px;
+    border-radius: 6px;
+    font-size: 11px;
+    line-height: 1.5;
+    border-left: 2px solid transparent;
+    animation: entry-in 0.25s ease;
+  }
+
+  @keyframes entry-in {
+    from { opacity: 0; transform: translateX(8px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  .log-entry.user {
+    background: rgba(56,180,255,0.06);
+    border-color: var(--accent2);
+    color: var(--text);
+  }
+
+  .log-entry.dna {
+    background: rgba(74,240,200,0.05);
+    border-color: var(--accent);
+    color: var(--text-muted);
+  }
+
+  .log-entry.system {
+    background: rgba(167,139,250,0.05);
+    border-color: var(--accent3);
+    color: var(--text-muted);
+    font-family: var(--mono);
+    font-size: 9px;
+  }
+
+  .log-speaker {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+  }
+
+  .log-entry.user .log-speaker { color: var(--accent2); }
+  .log-entry.dna .log-speaker { color: var(--accent); }
+
+  /* Skills grid */
+  .skills-section { padding: 0 12px; margin-top: 12px; }
+
+  .skills-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .skill-chip {
+    padding: 6px 8px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 10px;
+    color: var(--text-muted);
+    text-align: center;
+    font-family: var(--mono);
+    letter-spacing: 0.03em;
+    transition: all 0.2s;
+    cursor: default;
+  }
+
+  .skill-chip.active {
+    background: rgba(74,240,200,0.08);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* ── SUBTITLE BAR ── */
+  .subtitle-bar {
+    grid-column: 1 / 2;
+    background: linear-gradient(to top, rgba(8,12,16,0.98) 60%, transparent);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0 60px 28px;
+    pointer-events: none;
+    position: relative;
+  }
+
+  .subtitle-text {
+    font-family: var(--sans);
+    font-size: 18px;
+    font-weight: 300;
+    color: var(--text);
+    text-align: center;
+    line-height: 1.4;
+    letter-spacing: 0.05em;
+    min-height: 26px;
+    transition: opacity 0.3s;
+    text-shadow: 0 2px 20px rgba(8,12,16,0.9);
+    max-width: 680px;
+    word-spacing: 0.25em;
+  }
+
+  .subtitle-text .word {
+    display: inline-block;
+    animation: word-in 0.2s ease forwards;
+    opacity: 0;
+  }
+
+  @keyframes word-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .subtitle-text.user-speech {
+    color: #ffffff;
+  }
+
+  .subtitle-text.dna-speech {
+    color: #ffffff;
+    font-weight: 400;
+  }
+
+  .subtitle-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1.1em;
+    background: currentColor;
+    margin-left: 3px;
+    vertical-align: text-bottom;
+    animation: blink 1s step-end infinite;
+    opacity: 0;
+  }
+
+  .subtitle-cursor.visible { opacity: 1; }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  /* ── DEMO CONTROLS ── */
+  .demo-controls {
+    position: fixed;
+    bottom: 20px;
+    right: 260px;
+    display: flex;
+    gap: 8px;
+    z-index: 100;
+    pointer-events: all;
+  }
+
+  .demo-btn {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 7px 14px;
+    border-radius: 100px;
+    border: 1px solid var(--border);
+    background: rgba(8,12,16,0.9);
+    color: var(--text-muted);
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    transition: all 0.2s;
+  }
+
+  .demo-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(74,240,200,0.05);
+  }
+
+  /* Scanline overlay — subtle CRT feel */
+  .scanlines {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9999;
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent 0px,
+      transparent 2px,
+      rgba(0,0,0,0.03) 2px,
+      rgba(0,0,0,0.03) 4px
+    );
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+<div class="scanlines"></div>
+
+<div class="shell">
+
+  <!-- LEFT PANEL -->
+  <aside class="panel-left">
+    <div class="panel-header">
+      <div class="dna-logo">System Monitor</div>
+      <div class="dna-title">DNA / v2.0</div>
+    </div>
+
+    <div class="status-row">
+      <div class="status-dot" id="state-dot"></div>
+      <span class="status-text" id="state-label">LISTENING</span>
+    </div>
+
+    <div class="section-label">Performance</div>
+
+    <div class="metric-card">
+      <div class="metric-label">CPU Usage</div>
+      <div class="metric-value"><span id="cpu-val">34</span><span class="unit">%</span></div>
+      <div class="metric-bar-track">
+        <div class="metric-bar-fill" id="cpu-bar" style="width:34%"></div>
+      </div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-label">RAM Usage</div>
+      <div class="metric-value"><span id="ram-val">4.2</span><span class="unit">GB</span></div>
+      <div class="metric-bar-track">
+        <div class="metric-bar-fill" id="ram-bar" style="width:52%;background:var(--accent2)"></div>
+      </div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-label">Response Latency</div>
+      <div class="metric-value"><span id="lat-val">240</span><span class="unit">ms</span></div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="apps-section">
+      <div class="section-label">Top Processes</div>
+      <div class="app-row">
+        <span class="app-rank">01</span>
+        <span class="app-dot" style="background:#f87171"></span>
+        <span class="app-name" id="app1-name">chrome.exe</span>
+        <span class="app-cpu" id="app1-cpu">12.4%</span>
+      </div>
+      <div class="app-row">
+        <span class="app-rank">02</span>
+        <span class="app-dot" style="background:#fbbf24"></span>
+        <span class="app-name" id="app2-name">python.exe</span>
+        <span class="app-cpu" id="app2-cpu">8.1%</span>
+      </div>
+      <div class="app-row">
+        <span class="app-rank">03</span>
+        <span class="app-dot" style="background:#34d399"></span>
+        <span class="app-name" id="app3-name">code.exe</span>
+        <span class="app-cpu" id="app3-cpu">4.7%</span>
+      </div>
+      <div class="divider"></div>
+      <div class="total-apps">
+        <span class="total-label">Background apps</span>
+        <span class="total-count" id="total-apps">42</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- GLOBE AREA -->
+  <main class="globe-area">
+    <canvas id="globe-canvas"></canvas>
+    <div class="globe-ring r1" id="ring1"></div>
+    <div class="globe-ring r2" id="ring2"></div>
+    <div class="globe-ring r3" id="ring3"></div>
+    <div class="mode-badge" id="mode-badge">SLEEPING — SAY HEY JARVIS</div>
+  </main>
+
+  <!-- RIGHT PANEL -->
+  <aside class="panel-right">
+    <div class="panel-header">
+      <div class="dna-logo">Session Log</div>
+    </div>
+
+    <div class="wave-section">
+      <div class="section-label">Audio Input</div>
+      <canvas id="wave-canvas"></canvas>
+    </div>
+
+    <div class="log-area" id="log-area"></div>
+
+    <div class="divider"></div>
+
+    <div class="skills-section">
+      <div class="section-label" style="margin-bottom:8px">Active Skills</div>
+      <div class="skills-grid">
+        <div class="skill-chip active" id="sk-news">news</div>
+        <div class="skill-chip active" id="sk-jobs">jobs</div>
+        <div class="skill-chip" id="sk-data">data</div>
+        <div class="skill-chip active" id="sk-screen">screen</div>
+        <div class="skill-chip" id="sk-org">organizer</div>
+        <div class="skill-chip active" id="sk-sys">system</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- SUBTITLE BAR -->
+  <div class="subtitle-bar">
+    <div class="subtitle-text" id="subtitle-display">
+      <span class="subtitle-cursor visible" id="subtitle-cursor"></span>
+    </div>
+  </div>
+
+</div>
+
+<!-- Demo controls -->
+<div class="demo-controls">
+  <button class="demo-btn" onclick="simulateState('sleeping')">Sleeping</button>
+  <button class="demo-btn" onclick="simulateState('listening')">Listening</button>
+  <button class="demo-btn" onclick="simulateState('processing')">Processing</button>
+  <button class="demo-btn" onclick="simulateState('speaking')">Speaking</button>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════
+// THREE.JS NEURAL GLOBE
+// ══════════════════════════════════════════════════
+
+const canvas = document.getElementById('globe-canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setClearColor(0x000000, 0);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+camera.position.z = 5;
+
+// State
+let audioLevel = 0;
+let targetAudioLevel = 0;
+let currentState = 'sleeping';
+let time = 0;
+
+// Node and edge data
+const NODE_COUNT = 80;
+const EDGE_COUNT = 120;
+const nodes = [];
+const edges = [];
+
+// Colors per state
+const STATE_COLORS = {
+  sleeping:   { core: 0x2a3a4a, secondary: 0x1a2535, edge: 0x1e3040 },
+  listening:  { core: 0x4af0c8, secondary: 0x38b4ff, edge: 0x2a8fcc },
+  processing: { core: 0xa78bfa, secondary: 0x7c5fcf, edge: 0x6040aa },
+  speaking:   { core: 0x4af0c8, secondary: 0x38b4ff, edge: 0x2a8fcc },
+};
+
+// Sphere point distribution (Fibonacci)
+function fibonacciSphere(samples, radius) {
+  const pts = [];
+  const phi = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 0; i < samples; i++) {
+    const y = 1 - (i / (samples - 1)) * 2;
+    const r = Math.sqrt(1 - y * y);
+    const theta = phi * i;
+    pts.push(new THREE.Vector3(
+      Math.cos(theta) * r * radius,
+      y * radius,
+      Math.sin(theta) * r * radius
+    ));
+  }
+  return pts;
+}
+
+// Build nodes
+const positions = fibonacciSphere(NODE_COUNT, 1.6);
+const nodeGeom = new THREE.SphereGeometry(0.028, 8, 8);
+
+positions.forEach((pos, i) => {
+  const tier = i < 6 ? 'core' : i < 25 ? 'secondary' : 'tertiary';
+  const size = tier === 'core' ? 0.055 : tier === 'secondary' ? 0.035 : 0.022;
+  const geom = new THREE.SphereGeometry(size, 8, 8);
+  const mat = new THREE.MeshBasicMaterial({
+    color: tier === 'core' ? 0x4af0c8 : tier === 'secondary' ? 0x38b4ff : 0xa78bfa,
+    transparent: true,
+    opacity: tier === 'core' ? 0.9 : tier === 'secondary' ? 0.65 : 0.4,
+  });
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.position.copy(pos);
+  mesh.userData = { tier, basePos: pos.clone(), phase: Math.random() * Math.PI * 2, speed: 0.5 + Math.random() * 0.8 };
+  scene.add(mesh);
+  nodes.push(mesh);
+});
+
+// Build edges (connecting nearby nodes)
+const edgeMat = new THREE.LineBasicMaterial({ color: 0x2a8fcc, transparent: true, opacity: 0.18 });
+
+for (let i = 0; i < EDGE_COUNT; i++) {
+  const a = Math.floor(Math.random() * NODE_COUNT);
+  let b = Math.floor(Math.random() * NODE_COUNT);
+  while (b === a) b = Math.floor(Math.random() * NODE_COUNT);
+
+  const dist = nodes[a].position.distanceTo(nodes[b].position);
+  if (dist > 1.5) { i--; continue; }
+
+  const points = [nodes[a].position.clone(), nodes[b].position.clone()];
+  const geom = new THREE.BufferGeometry().setFromPoints(points);
+  const mat = edgeMat.clone();
+  const line = new THREE.Line(geom, mat);
+  line.userData = { a, b, baseMat: mat };
+  scene.add(line);
+  edges.push(line);
+}
+
+// Glow sphere
+const glowGeom = new THREE.SphereGeometry(1.7, 32, 32);
+const glowMat = new THREE.MeshBasicMaterial({
+  color: 0x4af0c8, transparent: true, opacity: 0,
+  side: THREE.BackSide,
+});
+const glowMesh = new THREE.Mesh(glowGeom, glowMat);
+scene.add(glowMesh);
+
+// Outer shell (wireframe)
+const shellGeom = new THREE.IcosahedronGeometry(1.85, 2);
+const shellMat = new THREE.MeshBasicMaterial({
+  color: 0x1e3040, wireframe: true, transparent: true, opacity: 0.08,
+});
+const shellMesh = new THREE.Mesh(shellGeom, shellMat);
+scene.add(shellMesh);
+
+function resize() {
+  const parent = canvas.parentElement;
+  const w = parent.clientWidth;
+  const h = parent.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+resize();
+window.addEventListener('resize', resize);
+
+function getStateColors() {
+  return STATE_COLORS[currentState] || STATE_COLORS.sleeping;
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  time += 0.012;
+
+  // Smooth audio level
+  audioLevel += (targetAudioLevel - audioLevel) * 0.1;
+
+  const cols = getStateColors();
+  const active = currentState !== 'sleeping';
+  const speaking = currentState === 'speaking';
+  const processing = currentState === 'processing';
+
+  // Rotate globe
+  const rotSpeed = active ? 0.003 + audioLevel * 0.008 : 0.001;
+  scene.rotation.y += rotSpeed;
+  scene.rotation.x = Math.sin(time * 0.15) * 0.05;
+
+  // Animate nodes
+  nodes.forEach((node, i) => {
+    const { tier, basePos, phase, speed } = node.userData;
+    const pulse = active
+      ? Math.sin(time * speed + phase) * (0.04 + audioLevel * 0.1)
+      : Math.sin(time * 0.3 + phase) * 0.01;
+
+    const currentRadiusMultiplier = speaking ? 1.4 : 1.0;
+    const dir = basePos.clone().normalize();
+    const newBase = basePos.clone().multiplyScalar(currentRadiusMultiplier);
+    node.position.copy(newBase).addScaledVector(dir, pulse);
+
+    // Flicker on audio
+    let opacity;
+    if (!active) {
+      opacity = tier === 'core' ? 0.2 : 0.08;
+    } else {
+      const flicker = speaking ? Math.abs(Math.sin(time * 8 + phase)) * audioLevel * 0.4 : 0;
+      opacity = tier === 'core' ? 0.85 + flicker : tier === 'secondary' ? 0.55 + flicker * 0.5 : 0.3 + flicker * 0.3;
+    }
+    node.material.opacity = Math.min(opacity, 1);
+    node.material.color.setHex(tier === 'core' ? cols.core : tier === 'secondary' ? cols.secondary : cols.secondary);
+
+    // Scale nodes on audio
+    const scale = active ? 1 + audioLevel * (tier === 'core' ? 0.5 : 0.2) : 1;
+    node.scale.setScalar(scale);
+  });
+
+  // Animate edges
+  edges.forEach((edge, i) => {
+    const a = nodes[edge.userData.a];
+    const b = nodes[edge.userData.b];
+    // Update positions (nodes moved)
+    const pts = edge.geometry.attributes.position;
+    pts.setXYZ(0, a.position.x, a.position.y, a.position.z);
+    pts.setXYZ(1, b.position.x, b.position.y, b.position.z);
+    pts.needsUpdate = true;
+
+    const baseOp = active ? 0.12 + audioLevel * 0.25 : 0.04;
+    const wave = processing ? Math.sin(time * 3 + i * 0.1) * 0.1 : 0;
+    edge.material.opacity = Math.max(0, Math.min(baseOp + wave, 0.7));
+    edge.material.color.setHex(cols.edge);
+  });
+
+  // Glow
+  const currentGlowMultiplier = speaking ? 1.4 : 1.0;
+  glowMesh.scale.setScalar(currentGlowMultiplier);
+  glowMat.opacity = active ? 0.04 + audioLevel * 0.08 : 0;
+  glowMat.color.setHex(cols.core);
+
+  // Shell
+  shellMesh.scale.setScalar(currentGlowMultiplier);
+  shellMat.opacity = active ? 0.06 + audioLevel * 0.05 : 0.03;
+  shellMat.color.setHex(cols.edge);
+
+  renderer.render(scene, camera);
+}
+animate();
+
+// ══════════════════════════════════════════════════
+// WAVEFORM VISUALIZER
+// ══════════════════════════════════════════════════
+
+const waveCanvas = document.getElementById('wave-canvas');
+const wctx = waveCanvas.getContext('2d');
+let waveData = new Float32Array(64).fill(0);
+
+function resizeWave() {
+  const parent = waveCanvas.parentElement;
+  waveCanvas.width = parent.clientWidth - 40;
+  waveCanvas.height = 48;
+}
+resizeWave();
+window.addEventListener('resize', resizeWave);
+
+function drawWave() {
+  requestAnimationFrame(drawWave);
+  const w = waveCanvas.width, h = waveCanvas.height;
+  wctx.clearRect(0, 0, w, h);
+
+  const active = currentState !== 'sleeping';
+  const barW = 3;
+  const gap = 2;
+  const count = Math.floor(w / (barW + gap));
+  const mid = h / 2;
+
+  for (let i = 0; i < count; i++) {
+    const idx = Math.floor(i / count * waveData.length);
+    let val = waveData[idx];
+
+    if (active) {
+      const t = Date.now() / 1000;
+      val += Math.sin(t * 4 + i * 0.4) * audioLevel * 0.4;
+      val += Math.sin(t * 7 + i * 0.2) * audioLevel * 0.2;
+      val = Math.max(0.03, Math.min(val, 1));
+    } else {
+      val = 0.03 + Math.sin(Date.now()/2000 + i * 0.3) * 0.01;
+    }
+
+    const bh = val * (h * 0.9);
+    const x = i * (barW + gap);
+    const color = currentState === 'processing' ? '#a78bfa' :
+                  currentState === 'speaking'   ? '#4af0c8' :
+                  active                        ? '#38b4ff' : 'rgba(255,255,255,0.12)';
+
+    wctx.fillStyle = color;
+    wctx.globalAlpha = active ? 0.8 : 0.4;
+    wctx.beginPath();
+    wctx.roundRect(x, mid - bh/2, barW, bh, 1.5);
+    wctx.fill();
+  }
+  wctx.globalAlpha = 1;
+}
+drawWave();
+
+// ══════════════════════════════════════════════════
+// STATE MACHINE
+// ══════════════════════════════════════════════════
+
+const STATES = {
+  sleeping: {
+    badge: 'SLEEPING — SAY HEY JARVIS',
+    dot: 'sleeping',
+    label: 'SLEEPING',
+  },
+  listening: {
+    badge: 'LISTENING...',
+    dot: '',
+    label: 'LISTENING',
+  },
+  processing: {
+    badge: 'PROCESSING',
+    dot: '',
+    label: 'PROCESSING',
+  },
+  speaking: {
+    badge: 'RESPONDING',
+    dot: '',
+    label: 'SPEAKING',
+  },
+};
+
+function setState(state) {
+  currentState = state;
+  const cfg = STATES[state];
+  const dot = document.getElementById('state-dot');
+  const label = document.getElementById('state-label');
+  const badge = document.getElementById('mode-badge');
+  const rings = ['ring1','ring2','ring3'];
+
+  dot.className = 'status-dot ' + cfg.dot;
+  label.className = 'status-text ' + cfg.dot;
+  label.textContent = cfg.label;
+  badge.textContent = cfg.badge;
+  badge.className = 'mode-badge' + (state !== 'sleeping' ? ' active' : '');
+
+  rings.forEach(r => {
+    document.getElementById(r).classList.toggle('active', state !== 'sleeping');
+  });
+}
+
+setState('sleeping');
+
+// ══════════════════════════════════════════════════
+// SUBTITLE DISPLAY
+// ══════════════════════════════════════════════════
+
+const subtitleEl = document.getElementById('subtitle-display');
+const subtitleCursor = document.getElementById('subtitle-cursor');
+let subtitleTimeout = null;
+let wordTimeout = null;
+
+function showSubtitle(text, type = 'user') {
+  clearTimeout(subtitleTimeout);
+  clearTimeout(wordTimeout);
+
+  subtitleEl.className = 'subtitle-text ' + (type === 'dna' ? 'dna-speech' : 'user-speech');
+  subtitleEl.innerHTML = '';
+
+  const words = text.split(' ');
+  let delay = 0;
+
+  words.forEach((word, i) => {
+    const span = document.createElement('span');
+    span.className = 'word';
+    span.textContent = word + (i < words.length - 1 ? ' ' : '');
+    span.style.animationDelay = delay + 'ms';
+    subtitleEl.appendChild(span);
+    delay += 60 + Math.random() * 30;
+  });
+
+  const cursor = document.createElement('span');
+  cursor.className = 'subtitle-cursor visible';
+  subtitleEl.appendChild(cursor);
+
+  // Fade out after display
+  const displayTime = Math.max(2500, words.length * 300);
+  subtitleTimeout = setTimeout(() => {
+    subtitleEl.style.opacity = '0';
+    setTimeout(() => {
+      subtitleEl.innerHTML = '<span class="subtitle-cursor visible"></span>';
+      subtitleEl.style.opacity = '1';
+      subtitleEl.className = 'subtitle-text';
+    }, 400);
+  }, displayTime);
+}
+
+// ══════════════════════════════════════════════════
+// SESSION LOG
+// ══════════════════════════════════════════════════
+
+const logArea = document.getElementById('log-area');
+
+function addLog(speaker, text, type = 'user') {
+  const entry = document.createElement('div');
+  entry.className = 'log-entry ' + type;
+
+  if (type !== 'system') {
+    const sp = document.createElement('div');
+    sp.className = 'log-speaker';
+    sp.textContent = speaker;
+    entry.appendChild(sp);
+  }
+
+  const txt = document.createElement('div');
+  txt.textContent = text;
+  entry.appendChild(txt);
+
+  logArea.appendChild(entry);
+  logArea.scrollTop = logArea.scrollHeight;
+
+  // Keep log from getting too long
+  while (logArea.children.length > 30) {
+    logArea.removeChild(logArea.firstChild);
+  }
+}
+
+// ══════════════════════════════════════════════════
+// CPU METRICS SIMULATION
+// (Replace with actual psutil WebSocket data)
+// ══════════════════════════════════════════════════
+
+const APPS = [
+  ['chrome.exe', 'python.exe', 'code.exe'],
+  ['discord.exe', 'node.exe', 'explorer.exe'],
+  ['slack.exe', 'ollama.exe', 'msedge.exe'],
+];
+let appSet = 0;
+let liveMode = false;
+
+function updateMetrics() {
+  if (liveMode) return;
+  const cpu = 20 + Math.random() * 50 + (currentState === 'processing' ? 25 : 0);
+  const ram = 3.8 + Math.random() * 1.2;
+  const lat = 180 + Math.random() * 120;
+  const total = 38 + Math.floor(Math.random() * 12);
+
+  document.getElementById('cpu-val').textContent = Math.round(cpu);
+  document.getElementById('ram-val').textContent = ram.toFixed(1);
+  document.getElementById('lat-val').textContent = Math.round(lat);
+  document.getElementById('total-apps').textContent = total;
+
+  const cpuBar = document.getElementById('cpu-bar');
+  cpuBar.style.width = cpu + '%';
+  cpuBar.className = 'metric-bar-fill' + (cpu > 70 ? ' danger' : cpu > 50 ? ' warn' : '');
+
+  document.getElementById('ram-bar').style.width = (ram / 8 * 100) + '%';
+
+  const apps = APPS[appSet % APPS.length];
+  const cpus = [
+    (Math.random() * 15 + 5).toFixed(1),
+    (Math.random() * 10 + 2).toFixed(1),
+    (Math.random() * 6 + 1).toFixed(1),
+  ];
+  document.getElementById('app1-name').textContent = apps[0];
+  document.getElementById('app2-name').textContent = apps[1];
+  document.getElementById('app3-name').textContent = apps[2];
+  document.getElementById('app1-cpu').textContent = cpus[0] + '%';
+  document.getElementById('app2-cpu').textContent = cpus[1] + '%';
+  document.getElementById('app3-cpu').textContent = cpus[2] + '%';
+}
+
+const metricsTimer = setInterval(updateMetrics, 2000);
+const appsTimer = setInterval(() => { appSet++; }, 8000);
+
+function updateWithRealMetrics(msg) {
+  if (!msg) return;
+  liveMode = true;
+
+  const cpu = Number.isFinite(msg.cpu) ? msg.cpu : null;
+  const ram = Number.isFinite(msg.ram) ? msg.ram : null;
+  const lat = Number.isFinite(msg.latency_ms) ? msg.latency_ms : null;
+
+  if (cpu !== null) {
+    document.getElementById('cpu-val').textContent = Math.round(cpu);
+    const cpuBar = document.getElementById('cpu-bar');
+    cpuBar.style.width = cpu + '%';
+    cpuBar.className = 'metric-bar-fill' + (cpu > 70 ? ' danger' : cpu > 50 ? ' warn' : '');
+  }
+
+  if (ram !== null) {
+    document.getElementById('ram-val').textContent = ram.toFixed(1);
+    document.getElementById('ram-bar').style.width = (ram / 8 * 100) + '%';
+  }
+
+  if (lat !== null) {
+    document.getElementById('lat-val').textContent = Math.round(lat);
+  }
+
+  if (Array.isArray(msg.apps) && msg.apps.length) {
+    const slots = ['app1', 'app2', 'app3'];
+    slots.forEach((slot, idx) => {
+      const app = msg.apps[idx];
+      if (!app) return;
+      document.getElementById(slot + '-name').textContent = app.name || 'unknown';
+      document.getElementById(slot + '-cpu').textContent = (app.cpu ?? 0) + '%';
+    });
+  }
+
+  if (Number.isFinite(msg.total_apps)) {
+    document.getElementById('total-apps').textContent = msg.total_apps;
+  }
+}
+
+// ══════════════════════════════════════════════════
+// DEMO SIMULATION
+// ══════════════════════════════════════════════════
+
+const DEMO_CONVOS = [
+  {
+    user: "Hey Jarvis, what are the top tech news today?",
+    dna: "Fetching latest headlines from your feeds. Found 8 new articles in AI and software.",
+    skill: 'sk-news',
+  },
+  {
+    user: "Open VS Code and show me recent files.",
+    dna: "Launching VS Code now. Your last three projects are Vizzy, DNA, and the fraud model.",
+    skill: 'sk-sys',
+  },
+  {
+    user: "Organise my Downloads folder.",
+    dna: "Sorted 42 files into 6 categories. Documents, images, and installers are the biggest groups.",
+    skill: 'sk-org',
+  },
+  {
+    user: "Find data analyst jobs in Bangalore.",
+    dna: "Found 14 openings on Indeed and 9 on Internshala. Saving results to your job log CSV.",
+    skill: 'sk-jobs',
+  },
+];
+let demoIdx = 0;
+
+function simulateState(state) {
+  setState(state);
+
+  if (state === 'listening') {
+    targetAudioLevel = 0.3 + Math.random() * 0.3;
+    const convo = DEMO_CONVOS[demoIdx % DEMO_CONVOS.length];
+    showSubtitle(convo.user, 'user');
+    addLog('YOU', convo.user, 'user');
+    addLog('SYS', 'wake word detected · stt processing', 'system');
+
+    setTimeout(() => {
+      simulateState('processing');
+      setTimeout(() => {
+        simulateState('speaking');
+        showSubtitle(convo.dna, 'dna');
+        addLog('JARVIS', convo.dna, 'dna');
+
+        // Highlight active skill
+        document.querySelectorAll('.skill-chip').forEach(c => c.classList.remove('active'));
+        document.getElementById(convo.skill)?.classList.add('active');
+
+        demoIdx++;
+        targetAudioLevel = 0.6 + Math.random() * 0.4;
+
+        setTimeout(() => {
+          simulateState('sleeping');
+          targetAudioLevel = 0;
+        }, 3500);
+      }, 1800);
+    }, 2200);
+  }
+
+  if (state === 'sleeping') {
+    targetAudioLevel = 0;
+  }
+  if (state === 'processing') {
+    targetAudioLevel = 0.1;
+  }
+}
+
+// ══════════════════════════════════════════════════
+// WEBSOCKET BRIDGE (DNA Backend)
+// Uncomment and point to your FastAPI/asyncio WS server
+// ══════════════════════════════════════════════════
+const ws = new WebSocket('ws://localhost:8765');
+
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  
+  switch(msg.type) {
+    case 'state':
+      setState(msg.state); // 'sleeping' | 'listening' | 'processing' | 'speaking'
+      break;
+    case 'stt':
+      showSubtitle(msg.text, 'user');
+      addLog('YOU', msg.text, 'user');
+      break;
+    case 'tts':
+      showSubtitle(msg.text, 'dna');
+      addLog('JARVIS', msg.text, 'dna');
+      break;
+    case 'audio_level':
+      targetAudioLevel = msg.level; // 0.0 to 1.0 from mic amplitude
+      break;
+    case 'metrics':
+      updateWithRealMetrics(msg);
+      break;
+    case 'skill':
+      document.querySelectorAll('.skill-chip').forEach(c => c.classList.remove('active'));
+      document.getElementById('sk-' + msg.skill)?.classList.add('active');
+      break;
+  }
+};
+
+ws.onopen = () => {
+  liveMode = true;
+  clearInterval(metricsTimer);
+  clearInterval(appsTimer);
+  addLog('SYS', 'connected to DNA backend', 'system');
+};
+ws.onclose = () => {
+  addLog('SYS', 'backend connection lost', 'system');
+};
+
+// Boot message
+setTimeout(() => {
+  addLog('SYS', 'DNA v2.0 · i3-1134G4 · 8GB RAM · NO GPU', 'system');
+  addLog('SYS', 'whisper base int8 · piper TTS · gemma4 31b', 'system');
+  addLog('SYS', 'awaiting wake word: hey jarvis', 'system');
+}, 500);
+</script>
+</body>
+</html>

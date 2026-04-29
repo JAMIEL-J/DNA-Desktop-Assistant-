@@ -14,7 +14,9 @@ from typing import Optional
 # 2. internal
 from pipeline.context_resolver import resolve_pronouns
 from pipeline.llm_agent import handle_complex_command
+from pipeline.plan_executor import execute_plan
 from core.skill_registry import get_tool_map
+from config import WORKFLOWS
 from core.safety import (
     is_tool_dangerous,
     is_tool_blocked,
@@ -26,6 +28,12 @@ logger = logging.getLogger('dna.router')
 
 # Win32: hide subprocess console windows
 CREATE_NO_WINDOW = 0x08000000
+
+DISMISS_PATTERNS = [
+    re.compile(r"\bjarvis[\s,]+(?:close|out|stop|bye|sleep|quiet|done|off)\b", re.I),
+    re.compile(r"\b(?:goodbye|go\s+to\s+sleep|stop\s+listening|that's\s+all)\b", re.I),
+    re.compile(r"\b(?:dismiss|exit|deactivate)\b", re.I),
+]
 
 # ════════════════════════════════════════════════════════════════════
 # Pending Confirmation State
@@ -81,24 +89,49 @@ def _check_confirmation(command: str) -> Optional[str]:
         return None
 
     cleaned = command.strip().lower()
+    cleaned = re.sub(r'[^a-z0-9\s]', ' ', cleaned)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    # Handle common STT slips for confirmation words.
+    cleaned = cleaned.replace('confirmm', 'confirm').replace('llock', 'lock')
 
     # ── Cancellation phrases ──
     cancel_patterns = [
-        'cancel', 'no', 'nope', 'stop', 'abort', 'never mind',
-        'don\'t', 'do not', 'negative', 'forget it', 'skip',
+        re.compile(r'\bcancel\b', re.I),
+        re.compile(r'\bno\b', re.I),
+        re.compile(r'\bnope\b', re.I),
+        re.compile(r'\bstop\b', re.I),
+        re.compile(r'\babort\b', re.I),
+        re.compile(r'\bnever\s+mind\b', re.I),
+        re.compile(r'\bdo\s+not\b', re.I),
+        re.compile(r'\bdon\s*t\b', re.I),
+        re.compile(r'\bnegative\b', re.I),
+        re.compile(r'\bforget\s+it\b', re.I),
+        re.compile(r'\bskip\b', re.I),
     ]
-    if any(phrase in cleaned for phrase in cancel_patterns):
+    if any(pattern.search(cleaned) for pattern in cancel_patterns):
         logger.info('User cancelled pending: %s', pending_tool)
         _clear_pending()
         return humanize_response('No problem, I\'ve cancelled that for you.')
 
     # ── Confirmation phrases ──
     confirm_patterns = [
-        'confirm', 'yes', 'yeah', 'yep', 'sure', 'go ahead',
-        'do it', 'proceed', 'okay', 'ok', 'affirmative',
-        'confirm shutdown', 'confirm restart', 'confirm lock',
+        re.compile(r'\bconfirm\b', re.I),
+        re.compile(r'\byes\b', re.I),
+        re.compile(r'\byeah\b', re.I),
+        re.compile(r'\byep\b', re.I),
+        re.compile(r'\bsure\b', re.I),
+        re.compile(r'\bgo\s+ahead\b', re.I),
+        re.compile(r'\bdo\s+it\b', re.I),
+        re.compile(r'\bproceed\b', re.I),
+        re.compile(r'\bokay\b', re.I),
+        re.compile(r'\bok\b', re.I),
+        re.compile(r'\baffirmative\b', re.I),
+        re.compile(r'\bconfirm\s+shutdown\b', re.I),
+        re.compile(r'\bconfirm\s+restart\b', re.I),
+        re.compile(r'\bconfirm\s+lock\b', re.I),
+        re.compile(r'\bconfirm\s+kill\b', re.I),
     ]
-    if any(phrase in cleaned for phrase in confirm_patterns):
+    if any(pattern.search(cleaned) for pattern in confirm_patterns):
         tool_name = pending_tool
         args = _pending_confirmation['args']
         _clear_pending()
@@ -171,11 +204,16 @@ SIMPLE_INTENTS = [
     (re.compile(r'\b(?:shut\s*down|power\s+off|turn\s+off)\s*(?:in\s+(\d+)\s*(?:seconds?|secs?|minutes?|mins?))?', re.I), 'shutdown_computer', lambda m: {'delay': _parse_delay(m)}),
     (re.compile(r'\bcancel\s+(?:the\s+)?shut\s*down\b', re.I), 'cancel_shutdown', lambda m: {}),
     (re.compile(r'\brestart\s*(?:in\s+(\d+)\s*(?:seconds?|secs?|minutes?|mins?))?', re.I), 'restart_computer', lambda m: {'delay': _parse_delay(m)}),
-    (re.compile(r'\block\s+(?:the\s+)?(?:screen|computer|pc)\b', re.I), 'lock_screen', lambda m: {}),
+    (re.compile(r'\block\s+(?:the\s+|my\s+|this\s+)?(?:screen|computer|pc|workstation)\b', re.I), 'lock_screen', lambda m: {}),
 
     # System Utilities
     (re.compile(r'\b(?:empty|clear)\s+(?:the\s+)?(?:recycle\s+)?bin\b', re.I), 'empty_recycle_bin', lambda m: {}),
     (re.compile(r'\b(?:system\s+(?:status|start|stat(?:us|rt|art))|pc\s+status|computer\s+status|how\s+is\s+my\s+(?:pc|computer)\s+doing)', re.I), 'get_system_status', lambda m: {}),
+    (re.compile(r'\b(?:system\s+health|health\s+status|pc\s+health|computer\s+health|cpu\s+ram\s+disk)\b', re.I), 'get_system_health', lambda m: {}),
+    (re.compile(r'\b(?:show|list|get|what(?:\'s| is))\s+(?:the\s+)?(?:top|heavy|highest)\s+(?:cpu\s+)?process(?:es)?\b', re.I), 'list_heavy_processes', lambda m: {}),
+    (re.compile(r'\b(?:kill|terminate|end)\s+(?:the\s+)?(?:process|task)\s+(.+)', re.I), 'kill_process', lambda m: {'name': _clean_arg(m.group(1))}),
+    (re.compile(r'\b(?:what\s+am\s+i\s+working\s+on|what\s+was\s+i\s+working\s+on|my\s+work\s+context)\b', re.I), 'get_work_context_summary', lambda m: {}),
+    (re.compile(r'\b(?:work\s+follow\s*up|follow\s*up\s+on\s+my\s+work|how\s+can\s+you\s+assist\s+me|assist\s+me\s+with\s+work)\b', re.I), 'work_followup', lambda m: {}),
 
     # --- SEARCH & NAVIGATION ---
     (re.compile(r'\b(?:play|search)\s+(.+)\s+on\s+youtube\b', re.I), 'search_youtube', lambda m: {'query': _clean_arg(m.group(1))}),
@@ -263,6 +301,51 @@ def _parse_delay(match) -> str:
     return str(seconds)
 
 
+def _check_workflow(command: str) -> Optional[str]:
+    """Execute a predefined workflow plan when a trigger phrase is spoken."""
+    if not command:
+        return None
+
+    cleaned = command.strip().lower()
+    cleaned = re.sub(r'[^a-z0-9\s]', ' ', cleaned)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+
+    # STT often hears "work mode" as near-homophones like "work more".
+    workflow_aliases = {
+        'work more': 'work mode',
+        'work mood': 'work mode',
+        'workmode': 'work mode',
+        'focus more': 'focus mode',
+        'focus mood': 'focus mode',
+    }
+
+    for alias, canonical in workflow_aliases.items():
+        if re.search(r'\b' + re.escape(alias) + r'\b', cleaned):
+            plan = WORKFLOWS.get(canonical)
+            if plan:
+                logger.info('Workflow matched via alias: %s -> %s', alias, canonical)
+                result = execute_plan(plan, get_tool_map())
+                return humanize_response(result)
+
+    for trigger, plan in WORKFLOWS.items():
+        pattern = r'\b' + re.escape(trigger.lower()) + r'\b'
+        if re.search(pattern, cleaned):
+            logger.info('Workflow matched: %s', trigger)
+            result = execute_plan(plan, get_tool_map())
+            return humanize_response(result)
+    return None
+
+
+def is_dismiss_command(text: str) -> bool:
+    """Return True if the command asks DNA to leave active session mode."""
+    if not text or not text.strip():
+        return False
+    cleaned = text.strip().lower()
+    cleaned = re.sub(r'[^a-z0-9\s]', ' ', cleaned)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    return any(pattern.search(cleaned) for pattern in DISMISS_PATTERNS)
+
+
 
 
 
@@ -291,6 +374,15 @@ def route(command: str, allow_llm: bool = True) -> Optional[str]:
     confirm_result = _check_confirmation(cleaned)
     if confirm_result is not None:
         return confirm_result
+
+    # ── Step 1.5: Workflow template matching ──
+    workflow_result = _check_workflow(cleaned)
+    if workflow_result is not None:
+        return workflow_result
+
+    # Avoid LLM fallback for standalone confirm/cancel when no action is pending.
+    if re.fullmatch(r'(?:confirm(?:\s+(?:lock|restart|shutdown))?|cancel|abort|never\s+mind)', cleaned):
+        return humanize_response('There is no pending action to confirm right now.')
 
     # ── Step 2: Regex intent matching ──
     for pattern, tool_name, arg_extractor in SIMPLE_INTENTS:

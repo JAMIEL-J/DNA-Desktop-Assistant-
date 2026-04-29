@@ -6,10 +6,11 @@
 
 # 1. stdlib
 import inspect
+import importlib
 import json
 import logging
 import re
-from typing import Any
+from typing import Any, cast
 
 # 2. third-party
 import requests
@@ -34,7 +35,7 @@ from core.safety import (
 )
 from pipeline.plan_executor import execute_plan, invoke_tool
 from pipeline.memory import get_preferences
-from core.personality import get_system_prompt
+from core.personality import get_system_prompt, humanize_response
 
 logger = logging.getLogger('dna.llm')
 
@@ -168,20 +169,19 @@ def _call_ollama(command: str, tool_names: list[str]) -> dict[str, Any]:
 
 def _call_google(command: str, tool_names: list[str]) -> dict[str, Any]:
     """Call Google's Gemini API."""
-    import google.generativeai as genai
-    genai.configure(api_key=GOOGLE_API_KEY)
-    
+    genai = importlib.import_module('google.genai')
+
     system_instruction = _build_system_prompt(tool_names)
-    model = genai.GenerativeModel(
-        model_name=CLOUD_LLM_MODEL,
-        system_instruction=system_instruction,
-        generation_config=genai.types.GenerationConfig(
-            temperature=OLLAMA_TEMPERATURE,
-        )
+    client = genai.Client(api_key=GOOGLE_API_KEY)
+    response = client.models.generate_content(
+        model=CLOUD_LLM_MODEL,
+        contents=command,
+        config={
+            'system_instruction': system_instruction,
+            'temperature': OLLAMA_TEMPERATURE,
+        },
     )
-    
-    response = model.generate_content(command)
-    return _parse_llm_json(response.text)
+    return _parse_llm_json(getattr(response, 'text', '') or '')
 
 def _call_llm(command: str, tool_names: list[str]) -> dict[str, Any]:
     """Route LLM call to Google if key is present, otherwise Ollama."""
@@ -223,27 +223,28 @@ def handle_complex_command(command: str, tool_map: dict[str, Any]) -> str:
         decision = _call_llm(command, tool_names)
 
         if 'plan' in decision and isinstance(decision['plan'], list):
-            return execute_plan(decision['plan'], tool_map)
+            return humanize_response(execute_plan(decision['plan'], tool_map))
 
         tool_name = str(decision.get('tool', 'unknown')).strip()
-        args = decision.get('args') if isinstance(decision.get('args'), dict) else {}
+        raw_args = decision.get('args')
+        args: dict[str, Any] = cast(dict[str, Any], raw_args) if isinstance(raw_args, dict) else {}
 
         if tool_name == 'clarify':
             question = str(args.get('question', 'Could you clarify what you want me to do?')).strip()
-            return question or 'Could you clarify what you want me to do?'
+            return humanize_response(question or 'Could you clarify what you want me to do?')
         if tool_name == 'unknown':
-            return "Hmm, I'm not quite sure what you need. Could you say that differently?"
+            return humanize_response("Hmm, I'm not quite sure what you need. Could you say that differently?")
 
-        return invoke_tool(tool_name, args, tool_map)
+        return humanize_response(invoke_tool(tool_name, args, tool_map))
     except requests.exceptions.ConnectionError:
-        return "Sorry, I can't reach my brain right now. Make sure the AI service is running."
+        return humanize_response("Sorry, I can't reach my brain right now. Make sure the AI service is running.")
     except requests.exceptions.Timeout:
-        return 'Sorry, that took too long. Could you try again?'
+        return humanize_response('Sorry, that took too long. Could you try again?')
     except requests.exceptions.HTTPError as e:
         status = e.response.status_code if e.response is not None else 'unknown'
         text = e.response.text if e.response is not None else 'No response content'
         logger.error('Ollama HTTP error %s: %s', status, text)
-        return 'Sorry, something went wrong on my end. Let me know if you want to try again.'
+        return humanize_response('Sorry, something went wrong on my end. Let me know if you want to try again.')
     except Exception as e:
         logger.error('Complex command handling failed: %s', e, exc_info=True)
-        return 'Sorry, I ran into an issue with that. Could you try again?'
+        return humanize_response('Sorry, I ran into an issue with that. Could you try again?')

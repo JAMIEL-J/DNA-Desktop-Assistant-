@@ -10,14 +10,14 @@
 
 ```
 Project   : DNA (Desktop Natural Assistant)
-Type      : Fully offline, privacy-first voice assistant
+Type      : Hybrid local-first, privacy-first voice assistant
 Platform  : Windows 11
 Owner     : Jamiel J. — single user, personal tool
 Hardware  : Intel i3-1134G4 (or N305 class), 8GB RAM, no GPU, Intel UHD 128MB
 Repo      : github.com/JAMIEL-J/DNA-Voice-Assistant
 
-Current Phase : DNA v2 Finished!
-Current Task  : All initial architecture loops completely established and hardened.
+Current Phase : Phase 17 — Suggestion Engine & Behavioral Intelligence Foundation
+Current Task  : Scored startup suggestions, cooldown policy, usage backfill, workflow templates, and cross-session persistence are complete.
 ```
 
 **What DNA does:**
@@ -41,7 +41,7 @@ Listens for a wake word → transcribes your voice command → routes it through
 | --- | --- | --- |
 | Wake Word | openwakeword | 0.6.0 — hey_jarvis built-in model |
 | STT | faster-whisper | 1.0.x — tiny (v1), base (v2), compute_type='int8' |
-| LLM | qwen3.5:2b via Ollama | [localhost:11434](http://localhost:11434) — Q4K quantised |
+| LLM | Gemma 4 E2B via Ollama (+ optional cloud fallback) | Local-first at localhost:11434; cloud used only when explicitly configured |
 | TTS | piper-tts | en_US-lessac-medium.onnx |
 | Automation | pyautogui + pygetwindow | 0.9.54 |
 | Audio | sounddevice + pyaudio | Recording pipeline |
@@ -78,21 +78,23 @@ Microphone
               └─> Context Resolver (v2: pronoun resolution from session state)
                     └─> Intent Router
                           ├─> [Simple] Regex match → Direct tool call (<10ms)
-                          └─> [Complex] Qwen3.5:2b → JSON plan → Plan Executor
+                          └─> [Complex] Hybrid LLM Router (local-first) → JSON plan → Plan Executor
                                                                       └─> Skill Tools
                                                                             ├─> system_skill
                                                                             ├─> file_skill
                                                                             ├─> data_skill (DuckDB / pandas)
                                                                             ├─> vision_skill (Moondream)
                                                                             ├─> browser_skill
-                                                                            └─> learned/ (approved snippets)
-                                                                      └─> core/safety.py (Safety Gate)
-                                                                            ├─> Protected path check
-                                                                            ├─> Dangerous tool → Confirmation flow
-                                                                            ├─> Blocked tool → Hard reject
-                                                                            └─> Command sanitisation
-                                                                      └─> Piper TTS → Speaker
-                                                                      └─> SQLite logger
+                                                                            └─> core/safety.py (Safety Gate)
+                                                                                  ├─> Protected path check
+                                                                                  ├─> Dangerous tool → Confirmation flow
+                                                                                  ├─> Blocked tool → Hard reject
+                                                                                  └─> Command sanitisation
+                                                                            └─> core/personality.py (Persona Hub)
+                                                                                  ├─> Dynamic Greetings
+                                                                                  └─> Local Humanizer (Zero Latency)
+                                                                            └─> Piper TTS → Speaker
+                                                                            └─> SQLite logger
 
 [Background] ProactiveMonitor (daemon thread) → CPU / Download alerts
 [Background] pystray icon → state color changes
@@ -137,6 +139,7 @@ DNA-Assistant/
 ├── core/
 │   ├── session.py            # Session state: active_file, active_app, last_result, last_df
 │   ├── safety.py             # Safety & security: path protection, command sanitisation, confirmation gates
+│   ├── personality.py        # Aide Persona Hub, system prompt instructions, local humanizer
 │   ├── skill_registry.py     # Auto-discovers all *_skill.py files, builds TOOL_MAP
 │   └── proactive.py          # Daemon thread: CPU >90% alert, new download alert
 ├── ui/
@@ -173,12 +176,12 @@ Every solution must run on Intel i3 CPU, 8GB RAM, no GPU.
 - Use direct HTTP requests to Ollama API at [localhost:11434](http://localhost:11434)
 - Use direct Python function calls for all tool execution
 
-**3. OFFLINE ONLY**
+**3. HYBRID LOCAL-FIRST**
 
-- Zero cloud API calls at runtime
-- No OpenAI, Anthropic, Groq, HuggingFace inference endpoints
-- All models run locally via Ollama or faster-whisper
-- Internet used only during initial model download
+- Local inference is the default path for runtime commands.
+- Cloud LLM fallback is allowed only when explicitly configured (API key present).
+- No mandatory cloud dependency for core assistant operations.
+- Sensitive/OS-destructive operations must still pass local safety gates before execution.
 
 **4. WINDOWS 11 ONLY**
 
@@ -512,6 +515,9 @@ Never auto-execute. Always confirm with user before saving a skill snippet.
 | 12 | Learning system — preferences + aliases (v2) | [x] |
 | 13 | Tray icon + toast notifications (UI) | [x] |
 | 14 | Stability, edge cases, error hardening | [x] |
+| 15 | Personality & Humanization | [x] |
+| 16 | Context + Workflow + Deep OS Expansion | [x] |
+| 17 | Suggestion Engine + Usage Intelligence Foundation | [x] |
 
 > Update [ ] to [x] as phases complete. Update `Current Phase` at the top of this prompt before each session.
 
@@ -622,3 +628,29 @@ Never auto-execute. Always confirm with user before saving a skill snippet.
 - Seamlessly threaded `ui/tray.py`'s context Exit hook into the global ecosystem allowing DNA to collapse itself elegantly dynamically.
 - `wait_for_wake_word` natively checks the boolean status flag to stop cleanly returning rather than forcefully terminating over blocking event polls.
 - Caught gracefully all `KeyboardInterrupt` loops to permit organic console-level Ctrl+C shutdowns seamlessly syncing to the UI instance safely breaking all daemon threads passively. All tasks achieved perfectly.
+
+## PHASE 15 COMPLETION NOTES (2026-04-10)
+
+- Developed `core/personality.py` implementing the **Loyal Digital Aide** (butler) persona.
+- Centralized the LLM system prompt in `personality.py`, transitioning DNA from a casual friend to a respectful, subservient assistant.
+- Engineered a **Hybrid Humanizer**:
+    - **LLM Branch**: Persona results naturally generated via system instruction.
+    - **Fast-Path Branch**: Regex tool results are wrapped in dynamic prefixes (As you wish sir, etc.) locally within `personality.py` to ensure zero response lag.
+- Refined TTS flow by optimizing punctuation and using commas to create natural rhythmic speech instead of robotic pauses.
+- Integrated `get_wake_greeting()` into `dna_main.py` for dynamic, time-aware activation responses.
+
+## PHASE 16 COMPLETION NOTES (2026-04-13)
+
+- Added workflow templates in `config.py` (`work mode`, `focus mode`, `end work`) and direct workflow routing in `pipeline/intent_router.py`.
+- Added cross-session context persistence (`session_state`) with startup restore and shutdown save.
+- Added usage pattern table and logging foundation in `pipeline/memory.py`.
+- Expanded `skills/system_skill.py` with `list_heavy_processes`, `kill_process`, and `get_system_health`.
+- Added dangerous-tool coverage for `kill_process` with confirmation warnings in `core/safety.py`.
+
+## PHASE 17 COMPLETION NOTES (2026-04-13)
+
+- Added suggestion policy config controls (enable switches, min confidence, min evidence count, cooldown minutes).
+- Implemented scored startup suggestions using usage data confidence and top-result margin.
+- Added cooldown persistence to prevent repetitive startup prompts.
+- Added incremental historical backfill from `command_log` into `usage_patterns` for faster usefulness on existing deployments.
+- Implemented sparse-data fallback (same hour across weekdays) for low-data startup recommendation resilience.

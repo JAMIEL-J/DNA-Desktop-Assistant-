@@ -1,336 +1,338 @@
-# 📜 Master Prompt Document
-# Master Prompt Document
+# DNA Master Prompt - Rebuild Blueprint
 
-**Version:** 1.0 | **Date:** March 2026 | **Author:** Jamiel J.
+Version: 3.0
+Date: 2026-04-13
+Owner: Jamiel J.
 
-> Copy Section 1 + 2 at the start of every AI coding session for DNA.
-> 
+This document is the rebuild contract for DNA.
+If followed exactly, the project can be rebuilt from scratch with correct architecture, safety, and behavior.
 
 ---
 
-## 1. Project Overview Block
+## 1) Mission and Scope
 
-```jsx
 PROJECT: DNA (Desktop Natural Assistant)
-TYPE: Fully offline, privacy-first voice assistant for Windows
-OWNER: Jamiel J. — personal tool, single user
-HARDWARE: Intel i3-1134G4, 8GB RAM, no GPU, Windows 11
+TYPE: Hybrid local-first, privacy-first Windows voice assistant
+TARGET: Single-user desktop operator with safe tool execution
 
-CORE PIPELINE:
-  Microphone -> OpenWakeWord -> faster-whisper -> Intent Router
-  -> [Phi-3-mini via Ollama] -> Plan Executor -> Skill Tools -> Piper TTS
-
-KEY ARCHITECTURE DECISIONS:
-  - No LangChain. Direct Ollama API calls only.
-  - LLM used only for complex/ambiguous commands. Regex handles simple ones.
-  - DuckDB for all datasets >100K rows. pandas for small files only.
-  - NL2SQL for query/filter/aggregate. NL2Py for transform/plot.
-  - Skill modules in /skills/ auto-discovered by core/skill_registry.py
-  - Session state in core/session.py resolves pronouns before LLM call.
-  - Multi-step plans: LLM returns JSON array, plan_executor loops through.
-  - Learning: preferences + aliases saved to SQLite. Skill snippets need approval.
-  - Thinking mode: OFF by default. ON only for web summarisation, file comparison,
-    complex NL2Py transforms, and ambiguous commands. Routed via needs_thinking().
-
-MODELS IN USE:
-  STT: faster-whisper tiny (v1) / base (v2)
-  LLM: qwen3.5:2b via Ollama (localhost:11434)
-       Thinking mode: OFF by default, ON for web summarisation / file comparison / ambiguous commands
-  TTS: Piper en_US-lessac-medium
-  Vision: moondream via Ollama (v2, on-demand only)
-
-CURRENT BUILD PHASE: [UPDATE THIS LINE EACH SESSION]
-```
+Core principle:
+- Fast local operation first
+- Optional cloud fallback only when configured
+- Deterministic tool routing for simple commands
+- Safety gate before any risky action
 
 ---
 
-## 2. Strict Instructions Block
+## 2) Rebuild Outcome Definition
 
-```
-STRICT RULES — follow all without exception:
-
-1. HARDWARE FIRST: Every solution must run on i3 CPU, 8GB RAM, no GPU.
-   Never suggest GPU-only libraries (torch cuda, tensorflow-gpu etc.)
-   Never suggest models >4B parameters for always-on use.
-   Never load multiple large models simultaneously.
-
-2. NO LANGCHAIN: Do not use LangChain, LlamaIndex, or similar frameworks.
-   Use direct requests to Ollama API (localhost:11434).
-   Use direct function calls for tool execution.
-
-3. OFFLINE ONLY: No cloud API calls at runtime.
-   No OpenAI, Anthropic, Groq, HuggingFace inference API.
-   All models run locally via Ollama or faster-whisper.
-
-4. WINDOWS COMPATIBLE: All code must work on Windows 11.
-   Use os.path.join, pathlib.Path, not hardcoded forward slashes.
-   pycaw for audio control (not alsaaudio or pactl).
-
-5. DUCKDB FOR LARGE DATA: Any dataset >100K rows uses DuckDB.
-   Never load large files fully into pandas.
-   Always check row count before deciding engine.
-
-6. NL2PY SAFETY: Generated Python code must be sandboxed.
-   Always check for BLOCKED terms before exec().
-   Never allow file system access from generated code.
-
-7. ERROR HANDLING: Every tool function must have try/except.
-   Return human-readable error strings, never raise to main loop.
-   Log every failure to SQLite command_log table.
-
-8. NO PLACEHOLDER CODE: Never write skeleton functions with 'pass' or
-   '# TODO' unless explicitly asked. Write working implementations.
-
-9. FILE PATHS: Always use config.py constants for paths.
-   Never hardcode paths inside skill files.
-
-10. THREAD SAFETY: Proactive monitor runs as daemon thread.
-    All shared state access goes through core/session.py.
-    Use threading.Lock() if writing to shared state from monitor thread.
-
-11. LEARNING SAFETY: Never auto-execute learned skill snippets.
-    Always confirm with user before saving a new skill.
-    Never auto-approve. Approval is always explicit.
-```
+A rebuild is correct only if all are true:
+1. Voice loop works end-to-end: listen -> transcribe -> route -> execute -> speak.
+2. Regex intents handle common commands without LLM.
+3. Complex/ambiguous commands route through LLM planner safely.
+4. Dangerous tools require spoken confirmation and timeout correctly.
+5. Skill registry auto-discovers all tool modules dynamically.
+6. Memory persists command logs, preferences, aliases, session state, and usage patterns.
+7. Startup suggestion engine uses evidence thresholds and cooldown.
+8. UI, tray, and proactive monitors run without crashing main loop.
 
 ---
 
-## 3. LLM System Prompts
+## 3) Hard Constraints
 
-### v1 — Single Tool Call
+1. Hardware first
+- Must run on i3-class CPU, 8 GB RAM, no GPU.
+- Avoid large always-on models.
 
-```
-You are DNA, a desktop voice assistant running locally on Windows.
-The user has given a voice command. Respond ONLY with a JSON object.
+2. No external agent frameworks
+- Do not use LangChain/LlamaIndex/AutoGen/CrewAI.
+- Use direct Python orchestration and direct API calls.
 
-Format: {"tool": "<tool_name>", "args": {<arguments>}}
+3. Hybrid local-first policy
+- Local inference is default.
+- Cloud fallback allowed only when API key exists.
+- Core operations must not depend on cloud.
 
-Available tools:
-  open_file:        {"path_or_name": "string"}
-  find_file:        {"name": "string"}
-  list_folder:      {"path": "string"}
-  create_folder:    {"path": "string"}
-  summarize_csv:    {"path": "string"}
-  plot_chart:       {"path": "string", "chart_type": "bar|line|scatter",
-                     "x": "col_name", "y": "col_name"}
-  analyse_and_chart:{"path": "string"}
-  run_script:       {"path": "string"}
-  web_search:       {"query": "string"}
-  type_text:        {"text": "string"}
-  clipboard_copy:   {"text": "string"}
+4. Windows 11 compatibility
+- Use pathlib/os-safe path handling.
+- Use Windows-safe subprocess/process flags.
 
-If argument unknown:
-  {"tool": "clarify", "args": {"question": "<what to ask user>"}}
+5. Safety-first execution
+- Block unsafe tool names and dangerous shell patterns.
+- Require explicit confirmation for dangerous actions.
 
-JSON only. No explanation. No markdown. No preamble.
-```
+6. No placeholder logic
+- No pass/TODO stubs in production behavior.
 
-### v2 — Multi-Step Plan
+7. Config as source of truth
+- Constants and thresholds must live in config.py.
 
-```
-You are DNA, a desktop voice assistant running locally on Windows.
-Respond ONLY with a JSON object containing a 'plan' array.
+8. Thread safety
+- Shared session state through core/session.py with lock.
 
-Format:
-{
-  "plan": [
-    {"tool": "tool_name", "args": {}, "use_prev_result": false},
-    {"tool": "tool_name", "args": {}, "use_prev_result": true}
-  ]
-}
+---
 
-use_prev_result: true = inject previous step output as 'input' arg.
-Single step commands still use plan array with one element.
+## 4) Required Runtime Stack
 
-Available tools:
-SYSTEM : open_app, close_app, set_volume, mute_unmute, media_control,
-         shutdown, take_screenshot
-FILES  : open_file, find_file, list_folder, create_folder
-DATA   : summarize_csv, plot_chart, analyse_and_chart, compare_files,
-         nl2sql_query, nl2py_transform
-BROWSER: web_search, open_url
-VISION : read_screen
-UTILITY: get_time_date, type_text, clipboard_copy
+- Wake: openwakeword
+- STT: faster-whisper
+- TTS: piper-tts
+- LLM local: Gemma 4 E2B via Ollama
+- LLM fallback: Gemini when key configured
+- Data: DuckDB + pandas + numpy + matplotlib
+- Vision: Moondream via Ollama
+- Automation: pyautogui
+- Audio control: pycaw
+- Persistence: sqlite3
+- Desktop UX: PySide6 + pystray + plyer
 
-JSON only. No explanation. No markdown. No preamble.
-```
+---
 
-### NL2SQL Prompt
+## 5) Canonical Folder Structure
 
-```
-You are a SQL expert. Generate a DuckDB SQL query for the user's request.
+Create exactly this structure:
 
-Table reference: always use FROM '{file_path}' (DuckDB reads files directly).
+DNA-Assistant/
+- config.py
+- dna_main.py
+- requirements.txt
+- pipeline/
+  - wake_word.py
+  - stt.py
+  - tts.py
+  - intent_router.py
+  - llm_agent.py
+  - plan_executor.py
+  - context_resolver.py
+  - memory.py
+- core/
+  - session.py
+  - safety.py
+  - personality.py
+  - skill_registry.py
+  - proactive.py
+- skills/
+  - system_skill.py
+  - file_skill.py
+  - data_skill.py
+  - vision_skill.py
+  - browser_skill.py
+  - learning_skill.py
+- ui/
+  - window.py
+  - tray.py
+  - toast.py
+- data/
+- logs/
+- docs/
 
-Schema:
-{schema_string}
+---
 
-Sample rows:
-{sample_rows}
+## 6) Module Contracts (Must Match)
 
-User request: {user_command}
+config.py
+- All constants and tunables live here.
+- Includes model settings, audio thresholds, workflow templates, suggestion policy, and paths.
+
+core/session.py
+- Thread-safe key-value session state.
+- Required keys: active_app, active_file, assistant_state, is_listening, is_speaking, mic_level, is_running, last_command, last_result.
+
+core/safety.py
+- DANGEROUS_TOOLS and BLOCKED_TOOLS policy.
+- Path protection helpers.
+- Argument/app name sanitization.
+- Human-readable warning text for dangerous tools.
+
+core/skill_registry.py
+- Discover all *_skill.py modules.
+- Merge exported TOOLS dictionaries into one tool map.
+
+pipeline/intent_router.py
+- Order: confirmation handling -> workflow trigger -> regex intents -> LLM fallback.
+- Must call safety checks before direct execution.
+
+pipeline/plan_executor.py
+- Validate tool safety before execution.
+- Execute step-by-step plan safely.
+
+pipeline/llm_agent.py
+- Local-first route.
+- Optional cloud fallback when configured.
+- Strict JSON parse and tool-name validation against tool map.
+
+pipeline/memory.py
+- SQLite init and CRUD for:
+  - command_log
+  - preferences
+  - aliases
+  - session_state
+  - usage_patterns
+- Incremental backfill from command_log into usage_patterns.
+- Scored startup suggestion function with confidence/cooldown.
+
+skills/*
+- Every skill exports TOOLS dict.
+- Every tool returns spoken-friendly string and catches exceptions.
+
+dna_main.py
+- Boot sequence initializes DB, restores session, discovers skills, starts monitors/tray/UI, and launches assistant loop.
+- Assistant loop drives listen/transcribe/route/speak lifecycle.
+- Saves session snapshot on shutdown.
+
+---
+
+## 7) Safety and Confirmation Contract
+
+Dangerous actions require confirmation phrases and timeout:
+- shutdown_computer
+- restart_computer
+- empty_recycle_bin
+- lock_screen
+- kill_process
 
 Rules:
-  - Return SQL only. No explanation. No markdown. No backticks.
-  - Use column names exactly as shown in schema.
-  - Always include LIMIT 100 unless user specifies otherwise.
-  - Never use DROP, DELETE, UPDATE, INSERT, or CREATE TABLE.
-  - Read-only queries only.
-```
+1. First command returns warning only.
+2. Pending action expires after timeout.
+3. confirm executes pending action.
+4. cancel aborts pending action.
+5. Unrelated command clears pending state.
 
-### NL2Py Prompt
-
-```
-You are a Python/pandas expert. Generate Python code for the user's request.
-
-Available variables (already in scope):
-  df  - pandas DataFrame
-  pd  - pandas
-  plt - matplotlib.pyplot
-  np  - numpy
-
-Schema:
-{schema_string}
-
-Sample rows:
-{sample_rows}
-
-User request: {user_command}
-
-Rules:
-  - Return Python code only. No explanation. No markdown. No backticks.
-  - Use column names exactly as shown in schema.
-  - Store final result in variable named 'result' (string).
-  - If generating a chart: save to Desktop, set result = 'Chart saved...'
-  - Never use: os, subprocess, open(), import, __builtins__
-  - Keep code concise.
-```
-
-### Vision Prompt (Moondream)
-
-```
-You are a screen reading assistant for DNA, a desktop voice assistant.
-The user has taken a screenshot of their current screen.
-
-User question: {user_question}
-
-Instructions:
-  - Describe what is visible relevant to the question.
-  - If there is an error message, read it out exactly.
-  - If there is code visible, identify language and summarise it.
-  - Keep response under 3 sentences. This will be spoken aloud.
-  - No markdown. Plain text only.
-```
+Blocked tools never execute.
 
 ---
 
-## 4. Code Style Guide
+## 8) STT and Voice Behavior Contract
 
-### Function Signature Convention
+Required behavior:
+1. Endpointed recording: tolerate short pauses.
+2. Detect incomplete utterances and capture continuation.
+3. Normalize noisy transcripts safely.
+4. Avoid over-aggressive VAD clipping.
 
-```python
-def tool_name(arg1: str, arg2: str = 'default') -> str:
-    try:
-        # implementation
-        return 'Success message spoken by TTS'
-    except Exception as e:
-        return f'Failed to do X: {str(e)}'
-```
-
-### Naming Conventions
-
-| Item | Convention | Example |
-| --- | --- | --- |
-| Skill files | snake_case + _[skill.py](http://skill.py) | data_[skill.py](http://skill.py) |
-| Tool functions | snake_case verb_noun | summarize_csv |
-| Constants | UPPER_SNAKE_CASE in [config.py](http://config.py) | WHISPER_MODEL |
-| Session keys | snake_case string | 'active_file' |
-
-### LLM Response Parsing
-
-```python
-try:
-    result = json.loads(raw_response.strip())
-except json.JSONDecodeError:
-    result = {"tool": "unknown", "args": {}}  # v1
-    # or
-    result = {"plan": [{"tool": "unknown", "args": {}}]}  # v2
-```
-
-### DuckDB Pattern
-
-```python
-def query_file(path: str, sql_template: str) -> pd.DataFrame:
-    con = duckdb.connect(DUCKDB_PATH)
-    sql = sql_template.replace('{file}', f"'{path}'")
-    return con.execute(sql).fetchdf()
-```
+Expected user experience:
+- Short pauses do not trigger early execution.
+- Commands like open whatsapp and what is current system status are captured reliably.
 
 ---
 
-## 5. Output Format Rules
+## 9) Workflow and Suggestion Contract
 
-### TTS Return String Rules
+Workflow templates:
+- work mode
+- focus mode
+- end work
 
-- Always complete sentences. No fragments.
-- Avoid symbols: %, $, #, *, /, \
-- Numbers for speaking: 'five point two lakhs' not '5.2L'
-- File paths shortened: 'Desktop' not full path
-- Max 3 sentences for simple results. Max 5 for complex.
+Behavior:
+- Router must detect workflow phrase and execute predefined plan immediately.
 
-### Good vs Bad Examples
-
-| Scenario | Bad | Good |
-| --- | --- | --- |
-| File opened | 'C:\Users\Jamiel\sales.xlsx opened' | 'Opened sales.xlsx from your Desktop.' |
-| Volume set | 'vol=60' | 'Volume set to 60.' |
-| CSV summary | 'df.shape=(500,8)' | 'Loaded 500 rows and 8 columns.' |
-| Error | 'FileNotFoundError: [Errno 2]' | 'Could not find that file. Try saying the exact filename.' |
+Suggestion engine:
+1. Track usage patterns by hour/day/tool/app.
+2. Compute startup suggestion from usage scores.
+3. Require min evidence and min confidence.
+4. Require top-result margin over second candidate.
+5. Respect cooldown to avoid repetition.
+6. Backfill historical command logs incrementally.
 
 ---
 
-## 6. Session Prompting Templates
+## 10) Build Sequence (From Zero)
 
-### Starting a New Session
+Phase 1: Core skeleton and config
+- Create folder structure and config constants.
+- Implement core/session.py and logging bootstrap.
 
-```
-We are building DNA (Desktop Natural Assistant).
-[Paste Section 1 Project Overview]
-[Paste Section 2 Strict Instructions]
-Current phase: [Phase N — brief description]
-Current issue: [one sentence describing the specific problem]
-```
+Phase 2: Voice pipeline
+- Implement wake_word.py, stt.py, tts.py.
+- Verify listen/transcribe/speak loop.
 
-### Debugging Template
+Phase 3: Intent + tools baseline
+- Implement system_skill.py baseline tools.
+- Add regex intents and direct routing.
 
-```
-DNA component: [e.g. pipeline/llm_agent.py]
-Expected behaviour: [what should happen]
-Actual behaviour: [what is happening]
-Error message: [paste error]
-Relevant code: [paste function]
+Phase 4: LLM fallback and planner
+- Implement llm_agent.py and plan_executor.py.
+- Add strict JSON parser and tool validation.
 
-Fix this without changing the architecture. No LangChain. Windows only.
-```
+Phase 5: Memory persistence
+- Implement pipeline/memory.py with SQLite init and command log.
 
-### New Skill Template
+Phase 6: Context and skill registry
+- Add context resolver and dynamic skill discovery.
 
-```
-Add a new skill to DNA called [skill_name]_skill.py.
-It should handle: [describe what the skill does]
-Tools to expose: [list tool names]
-Libraries to use: [list libraries]
-Follow the TOOLS dict pattern. Every function returns a string.
-Every function has try/except. No hardcoded paths — use config.py.
-Windows 11 compatible only. No cloud calls.
-```
+Phase 7: Data and vision skills
+- Add data_skill.py and vision_skill.py.
 
-### Learning System Template
+Phase 8: Safety hardening
+- Implement core/safety.py and confirmation flow.
 
-```
-Add learning capability to DNA for: [preference / alias / skill snippet]
-Detection signals: [list trigger phrases]
-Storage: SQLite table [table name]
-Approval required: [yes/no]
-Follow the existing learning system pattern in core/session.py.
-```
+Phase 9: UX and proactive services
+- Add tray, toast, orb UI, proactive monitors.
+
+Phase 10: Learning and suggestions
+- Add preferences/aliases learning.
+- Add usage pattern tracking and suggestion engine.
+
+Phase 11: Workflow templates and deep OS controls
+- Add workflow execution and advanced system controls.
+
+---
+
+## 11) Definition of Done by Capability
+
+A capability is done only when:
+1. Functionality works in real runtime path.
+2. Safety checks are enforced.
+3. Failure paths return human-readable spoken messages.
+4. Changes compile successfully.
+5. No regression in core voice loop.
+
+---
+
+## 12) Required Verification Checklist
+
+Run after every major update:
+1. Syntax compile for modified files.
+2. Intent smoke tests:
+- open app
+- lock screen -> confirm/cancel flow
+- kill process -> confirm flow
+- workflow trigger
+3. LLM fallback sanity test for unknown command.
+4. Memory writes verified in SQLite tables.
+5. Startup without crash and graceful shutdown.
+
+---
+
+## 13) Prompt Template to Start Any New Coding Session
+
+Paste this block:
+
+We are rebuilding DNA from scratch under the DNA Master Prompt Rebuild Blueprint.
+Current phase: [phase]
+Current task: [specific objective]
+Files to implement: [list]
+Constraints: Windows-only, hybrid local-first, no external agent frameworks, safety-gated execution.
+Deliverables:
+1) Working code
+2) Compile validation
+3) Short smoke-test evidence
+
+---
+
+## 14) Non-Negotiable Engineering Style
+
+- Keep functions small and deterministic.
+- Use explicit logging for critical path and failures.
+- Do not silently swallow safety-relevant errors.
+- Keep spoken responses concise and natural.
+- Prefer robust defaults in config with env overrides.
+
+---
+
+## 15) Current Project State Snapshot
+
+Completed capability envelope:
+- Phases 1 through 17 implemented.
+- Includes workflows, cross-session persistence, deep OS controls, usage intelligence, and scored startup suggestions.
+
+This prompt is now the canonical rebuild spec.

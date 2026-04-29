@@ -6,6 +6,7 @@
 
 import logging
 import os
+import importlib
 import re
 from pathlib import Path
 
@@ -134,11 +135,15 @@ def _call_llm_for_code(prompt: str) -> str:
     try:
         # Cloud path
         if GOOGLE_API_KEY:
-            import google.generativeai as genai
-            genai.configure(api_key=GOOGLE_API_KEY)
-            model = genai.GenerativeModel(CLOUD_LLM_MODEL)
-            response = model.generate_content(prompt)
-            content = response.text.strip()
+            genai = importlib.import_module('google.genai')
+
+            client = genai.Client(api_key=GOOGLE_API_KEY)
+            response = client.models.generate_content(
+                model=CLOUD_LLM_MODEL,
+                contents=prompt,
+                config={'temperature': 0.0},
+            )
+            content = (getattr(response, 'text', '') or '').strip()
         else:
             # Local Ollama path
             response = requests.post(
@@ -161,7 +166,7 @@ def _call_llm_for_code(prompt: str) -> str:
         return ''
 
 
-def _get_data_profile(path: str) -> str:
+def _get_data_profile(path: str) -> tuple[str, int, list[str]]:
     """Generate a data profile string for LLM context: schema, nulls, sample rows."""
     con = duckdb.connect()
     try:
@@ -172,14 +177,16 @@ def _get_data_profile(path: str) -> str:
         schema_str = ", ".join([f"{c} ({t})" for c, t in zip(columns, types)])
 
         # Row count
-        count = con.execute(f"SELECT COUNT(*) FROM read_csv_auto('{path}')").fetchone()[0]
+        count_row = con.execute(f"SELECT COUNT(*) FROM read_csv_auto('{path}')").fetchone()
+        count = int(count_row[0]) if count_row else 0
 
         # Null counts per column
         null_parts = []
         for col in columns:
-            nulls = con.execute(
+            nulls_row = con.execute(
                 f"SELECT COUNT(*) FROM read_csv_auto('{path}') WHERE \"{col}\" IS NULL"
-            ).fetchone()[0]
+            ).fetchone()
+            nulls = int(nulls_row[0]) if nulls_row else 0
             if nulls > 0:
                 null_parts.append(f"{col}: {nulls} nulls")
         null_str = ", ".join(null_parts) if null_parts else "No nulls found"
@@ -229,7 +236,7 @@ def _summarize_for_voice(question: str, result_df) -> str:
     return f'Here is the result: {display_res}'
 
 
-def _duckdb_analysis(path: str, question: str, profile: str, columns: list) -> str:
+def _duckdb_analysis(path: str, question: str, profile: str, columns: list[str]) -> str | None:
     """Analyze data using DuckDB NL2SQL (priority path)."""
     logger.info('DuckDB NL2SQL analysis: %s', path)
     con = duckdb.connect(str(DUCK_PATH))

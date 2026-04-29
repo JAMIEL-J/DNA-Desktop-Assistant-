@@ -1,9 +1,9 @@
 # DNA Project Status & Memory
 
-## 🚀 Current Phase: DNA v2 Stable Release
-**Goal**: Finalized i3 8GB / 12GB SSD Optimized Architecture.
+## 🚀 Current Phase: Phase 17 — Suggestions & Behavioral Intelligence Foundation
+**Goal**: Move from static automation to adaptive behavior using usage history, confidence scoring, and cooldown policies.
 **Status**: ✅ Complete
-**Current Task**: System fully functional using **Gemma 2 2B (Q4)** and **Moondream** Vision with context-aware learning.
+**Current Task**: Suggestion policy engine, historical backfill, cross-session continuity, workflow templates, and deeper OS controls are fully integrated.
 
 ## 📋 Phase Tracker
 | Phase | Goal | Status |
@@ -22,6 +22,9 @@
 | 12 | Learning system — preferences + aliases (v2) | ✅ Complete |
 | 13 | Tray icon + toast notifications (UI) | ✅ Complete |
 | 14 | Stability, edge cases, error hardening | ✅ Complete |
+| 15 | Personality & Humanization (Aide Persona) | ✅ Complete |
+| 16 | Context, Workflow, and OS Expansion | ✅ Complete |
+| 17 | Suggestion Engine & Usage Intelligence Foundation | ✅ Complete |
 
 ## 🧠 Memory Configuration (8GB RAM Optimization)
 - **Target LLM:** Gemma 4 E2B (April 2026 Release) ~1.7GB
@@ -52,6 +55,15 @@
 - **[2026-04-07]**: Phase 12 Complete. Engineered `skills/learning_skill.py` to permit users to actively dictate preferences and app/folder aliases. Dynamically integrated mapping rules inside `skills/system_skill.py` and `skills/file_skill.py`. Plumbed preference awareness back into Ollama's payload construction via `pipeline/llm_agent.py`. Transitioning to Phase 13.
 - **[2026-04-07]**: Phase 13 Complete. Created `ui/toast.py` wrapping the `plyer` library to invoke standard Windows 11 system notifications gracefully. Added `ui/tray.py` operating under a daemon polling routine through `pystray`. Safely wired instances back into `dna_main.py` and `core/proactive.py`. Transitioning to Phase 14.
 - **[2026-04-07]**: Phase 14 Complete. Implemented a universally threaded lifecycle flag `is_running` natively within `core/session.py`. Hooked the wake-word block, proactive monitor thread loops, tray UI, and main `dna_main` sequence together so the entire application cleanly cascades to termination organically when stopped. All tasks fully validated.
+- **[2026-04-10]**: **Phase 15 Complete (Personality & Humanization).** Created `core/personality.py` to house the "Loyal Digital Aide" persona. Updated the LLM system prompt in `pipeline/llm_agent.py` to follow an obedient and respectful tone. Developed a **Hybrid Humanization Path**: using the LLM for complex responses and a **Local Humanizer** (Python logic) for zero-latency rephrasing of regex tool results (e.g., "At once sir, volume set to 40"). Refined all greetings and prefixes to ensure natural TTS flow (removing redundant robotic pauses). Updated `dna_main.py` to acknowledge the user with dynamic, time-aware greetings ("Good afternoon sir, how can I be of assistance?").
+- **[2026-04-10]**: UI system was redesigned to orb-only mode with frameless transparency and mic-level bubble, while preserving real-time state animation.
+- **[2026-04-10]**: STT normalization and continuation logic were hardened to handle partial speech and phrase-splits (e.g., "what's app" -> "whatsapp", and multi-chunk continuation for incomplete utterances).
+- **[2026-04-10]**: Lock-screen regex and dangerous-action confirmation flow were fixed so "lock my screen" and "confirm lock" route reliably without LLM ambiguity.
+- **[2026-04-10]**: Endpointed speech capture implemented (pause-tolerant recording), replacing rigid fixed-window listening to avoid premature execution on short silence gaps.
+- **[2026-04-13]**: **Phase 16 Complete (Context + Workflow + Deep OS V1).** Added workflow templates in `config.py` (`work mode`, `focus mode`, `end work`) and workflow trigger routing in `pipeline/intent_router.py` via `execute_plan`. Added cross-session persistence (`session_state`) with startup restore and shutdown save. Expanded system controls with `list_heavy_processes`, `kill_process`, and `get_system_health` in `skills/system_skill.py`.
+- **[2026-04-13]**: Safety model expanded: `kill_process` added as dangerous tool with explicit confirm/cancel spoken flow.
+- **[2026-04-13]**: **Phase 17 Complete (Suggestion Intelligence Foundation).** Added policy-controlled suggestion engine settings, scored startup suggestions (count/confidence/margin), cooldown suppression, and incremental usage backfill from historical `command_log` into `usage_patterns`.
+- **[2026-04-13]**: Hybrid LLM posture finalized: local-first with optional cloud fallback available when API key is configured.
 - **[2026-04-07]**: Memory Hardening for 8GB RAM Completed. Switched core engine to **Gemma 2 2B (Q4)** and limited `OLLAMA_CTX` to 2048 globally. Synchronized with **12GB SSD Virtual RAM (Page File)** swap strategy for absolute system stability on i3 hardware.
 - **[2026-04-07]**: Memory Hardening for 8GB RAM Completed. Switched core engine to **Gemma 2 2B (Q4)** and limited `OLLAMA_CTX` to 2048 to prevent memory spikes on i3 hardware. Synchronized with **12GB SSD Virtual RAM (Page File)** swap strategy for guaranteed stability.
 
@@ -71,17 +83,21 @@
 - `core/proactive.py` — Daemon thread manager for system resource monitoring and alerts
 - `ui/tray.py` — Background interactive System Tray Icon engine
 - `ui/toast.py` — Windows toast integration
+- `core/personality.py` — Aide Persona engine, system prompt hub, and local humanizer (NEW)
 - `core/__init__.py` — Core package init
 - `core/session.py` — Thread-safe session state
 - `core/safety.py` — Safety & security: path protection, command sanitisation, confirmation gates
 - `pipeline/memory.py` — SQLite memory database operations
+- `pipeline/memory.py` — SQLite memory + session persistence + usage intelligence + scored suggestions
 - `test_phase2.py` — Intent router unit tests (35/35 pass)
 
 ## ⚠️ Active Constraints & Blockers
-- **Constraint**: Strict compliance with `docs/Master_Development_Prompt.md` (now 15 constraints).
+- **Constraint**: Strict compliance with `docs/Master_Development_Prompt.md` (now 16 constraints).
 - **Constraint**: Dangerous tools (shutdown, restart, empty bin, lock) require spoken confirmation (30s timeout).
+- **Constraint**: Dangerous process termination (`kill_process`) requires spoken confirmation.
 - **Constraint**: Process isolation — all app launches use `DETACHED_PROCESS` flags to prevent UI crashes.
 - **Constraint**: Protected paths (`C:\Windows`, `C:\Program Files`, `AppData`) are blocked from file operations.
+- **Constraint**: Hybrid LLM mode is local-first; cloud fallback is optional and key-gated.
 - **Resolved**: openwakeword model download, pycaw API mismatch.
 - **Resolved**: Black screen / UI crash on app close (console window inheritance).
 - **Note**: PyAutoGUI screenshot requires display. Media keys require active media player.

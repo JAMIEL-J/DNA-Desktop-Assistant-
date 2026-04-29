@@ -15,8 +15,9 @@ import sounddevice as sd
 # 3. internal
 from config import (
     PIPER_MODEL_DIR, PIPER_MODEL_PATH, PIPER_MODEL_JSON,
-    PIPER_VOICE, SAMPLE_RATE,
+    PIPER_VOICE, SAMPLE_RATE, TTS_SUPPRESS_MS,
 )
+from core.session import update as session_update
 
 logger = logging.getLogger('dna.tts')
 
@@ -33,6 +34,18 @@ _JSON_URL = f'{_HF_BASE}/{_LANG_SHORT}/{_LANG_CODE}/{_SPEAKER}/{_QUALITY}/{PIPER
 # Lazy-loaded Piper synthesizer
 _synthesizer = None
 _synth_lock = threading.Lock()
+_tts_lock = threading.Event()
+
+
+def _clear_tts_lock_after_playback() -> None:
+    """Clear speaking lock after async playback completes and suppress window passes."""
+    try:
+        sd.wait()
+    except Exception:
+        pass
+    time.sleep(TTS_SUPPRESS_MS / 1000.0)
+    _tts_lock.clear()
+    session_update('is_speaking', False)
 
 
 def _download_voice_model():
@@ -111,7 +124,7 @@ def _synthesize_to_float32(voice, text: str):
 
 
 def speak(text: str) -> str:
-    """Convert text to speech and play it through the speakers.
+    """Convert text to speech and play it through the speakers using streaming.
 
     Args:
         text: The text to speak aloud.
@@ -123,44 +136,44 @@ def speak(text: str) -> str:
         if not text or not text.strip():
             return 'Nothing to say.'
 
+        _tts_lock.set()
+        session_update('is_speaking', True)
         voice = _get_synthesizer()
-        audio_float, tts_sample_rate = _synthesize_to_float32(voice, text)
+        tts_sample_rate = voice.config.sample_rate
 
-        sd.play(audio_float, samplerate=tts_sample_rate)
-        sd.wait()
+        logger.info('Speaking (streaming): "%s"', text)
+        
+        # Stream chunks directly to audio output as they form
+        with sd.OutputStream(samplerate=tts_sample_rate, channels=1, dtype='int16') as stream:
+            for chunk in voice.synthesize(text):
+                audio_int16 = np.frombuffer(chunk.audio_int16_bytes, dtype=np.int16)
+                stream.write(audio_int16)
 
-        logger.info('Spoke: "%s" (%.1fs audio)', text,
-                     len(audio_float) / tts_sample_rate)
         return f'Said: {text}'
 
     except Exception as e:
         logger.error('TTS speak failed: %s', e)
         return f'Could not speak that: {str(e)}'
+    finally:
+        time.sleep(TTS_SUPPRESS_MS / 1000.0)
+        _tts_lock.clear()
+        session_update('is_speaking', False)
 
 
 def speak_async(text: str) -> str:
-    """Convert text to speech and play without blocking.
+    """Convert text to speech and play without blocking using a background thread."""
+    if not text or not text.strip():
+        return 'Nothing to say.'
 
-    Args:
-        text: The text to speak aloud.
+    def _async_worker():
+        speak(text)
 
-    Returns:
-        Confirmation message or error description.
-    """
-    try:
-        if not text or not text.strip():
-            return 'Nothing to say.'
+    threading.Thread(target=_async_worker, daemon=True).start()
+    return f'Speaking: {text}'
 
-        voice = _get_synthesizer()
-        audio_float, tts_sample_rate = _synthesize_to_float32(voice, text)
 
-        sd.play(audio_float, samplerate=tts_sample_rate)
-
-        logger.info('Speaking (async): "%s"', text)
-        return f'Speaking: {text}'
-
-    except Exception as e:
-        logger.error('TTS async speak failed: %s', e)
-        return f'Could not speak that: {str(e)}'
+def is_speaking() -> bool:
+    """Return True while TTS is speaking or in short suppression window."""
+    return _tts_lock.is_set()
 
 

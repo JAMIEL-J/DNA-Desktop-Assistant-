@@ -12,7 +12,11 @@ _state = {
     'last_df': None,
     'last_command': None,
     'is_listening': False,
+    'assistant_state': 'sleeping',
+    'is_speaking': False,
+    'mic_level': 0.0,
     'is_running': True,
+    'suppress_next_tts': False,
 }
 
 

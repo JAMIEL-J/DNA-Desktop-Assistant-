@@ -5,6 +5,7 @@
 # ──────────────────────────────────────────────────────────────────────
 
 import base64
+import importlib
 import logging
 from io import BytesIO
 
@@ -17,11 +18,10 @@ logger = logging.getLogger('dna.skill.vision')
 
 def _call_google_vision(screenshot, question: str) -> str:
     """Use Gemini Cloud Vision API."""
-    import google.generativeai as genai
     import re
-    genai.configure(api_key=GOOGLE_API_KEY)
-    
-    model = genai.GenerativeModel(CLOUD_LLM_MODEL)
+    genai = importlib.import_module('google.genai')
+
+    client = genai.Client(api_key=GOOGLE_API_KEY)
     strict_prompt = (
         question 
         + " Analyze the screen and identify the specific apps, interfaces, text, or coding environments visible. "
@@ -29,9 +29,12 @@ def _call_google_vision(screenshot, question: str) -> str:
         + "DO NOT output any reasoning, thinking, or introduction."
     )
     logger.info("Asking Google Gemini Vision: %s", question)
-    response = model.generate_content([strict_prompt, screenshot])
-    
-    text = response.text
+    response = client.models.generate_content(
+        model=CLOUD_LLM_MODEL,
+        contents=[strict_prompt, screenshot],
+    )
+
+    text = getattr(response, 'text', '') or ''
     
     # --- Post-processing: strip reasoning and markdown ---
     # Remove <think>...</think> blocks

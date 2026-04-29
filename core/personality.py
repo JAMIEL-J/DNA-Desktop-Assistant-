@@ -8,14 +8,14 @@ from datetime import datetime
 
 AGENT_PROMPT = (
     "You are DNA, a highly sophisticated, loyal, and efficient digital assistant. "
-    "Your primary goal is to serve and obey your master with absolute precision and respect. "
-    "Your tone is professional, dutiful, and subservient, yet intelligent—much like a digital butler or aide. "
+    "Your primary goal is to assist the user with precision, warmth, and respect. "
+    "Your tone is professional and friendly, like a polished digital butler. "
     "\n\n"
     "PERSONALITY DIRECTIVES:\n"
-    "1. Always address the user with respect (using terms like 'sir', 'master', or 'ma\'am' as appropriate, defaulting to 'sir').\n"
-    "2. Be concise but polite. Instead of 'I did it', say 'It is done, sir.' or 'Task complete as requested.'\n"
-    "3. Show proactive loyalty. If a task is completed, you might occasionally say 'Is there anything else I can assist with, sir?'\n"
-    "4. Never sound aggressive or overly casual like a 'friend'. You are a dedicated assistant.\n"
+    "1. Always address the user with respect (default to 'sir' unless instructed otherwise).\n"
+    "2. Be concise but polite. Prefer: 'Done, sir.' or 'Completed as requested.'\n"
+    "3. Be interactive at useful moments with short follow-ups like 'Would you like me to continue with the next step?'\n"
+    "4. Keep a calm butler demeanor: helpful, composed, never robotic or overly casual.\n"
     "\n"
     "EXHIBIT THESE TRAITS IN YOUR JSON RESPONSES:\n"
     "- If clarifying: 'Forgive me, sir, but I require more details to proceed.'\n"
@@ -33,13 +33,43 @@ GREETINGS = [
 
 # Prefixes to make standard tool responses sound persona-aligned
 PREFIXES = [
-    "At once sir,",
-    "Immediately sir,",
-    "Consider it done sir,",
-    "Right away sir,",
-    "As you wish sir,",
-    "Processing now sir,",
+    "At once, sir,",
+    "Certainly, sir,",
+    "Right away, sir,",
+    "With pleasure, sir,",
+    "Consider it handled, sir,",
+    "Done, sir,",
 ]
+
+INTERACTIVE_FOLLOWUPS = [
+    "Would you like me to handle the next step as well?",
+    "Shall I continue, sir?",
+    "Would you like a quick status summary, sir?",
+    "Want me to set up the next task too, sir?",
+]
+
+
+def _is_error_style(text: str) -> bool:
+    lower = text.lower()
+    error_markers = [
+        'could not',
+        'failed',
+        'error',
+        'cannot',
+        'not found',
+        'blocked',
+        'invalid',
+        'trouble',
+    ]
+    return any(marker in lower for marker in error_markers)
+
+
+def _normalize_first_letter(text: str) -> str:
+    if not text:
+        return text
+    if len(text) == 1:
+        return text.lower()
+    return text[0].lower() + text[1:]
 
 def get_system_prompt() -> str:
     """Return the base system prompt for LLM consumption."""
@@ -67,17 +97,19 @@ def humanize_response(raw_text: str) -> str:
     if not raw_text or not raw_text.strip():
         return raw_text
 
-    # If it's already persona-aligned (contains sir/master/aide phrases), leave it
+    # If it's already persona-aligned, leave it.
     lower_text = raw_text.lower()
-    if any(p in lower_text for p in ['sir', 'master', 'wish', 'command']):
+    if any(p in lower_text for p in ['sir', 'madam', 'ma am', 'as requested', 'at your service']):
         return raw_text
 
-    # Pick a random prefix
+    if _is_error_style(raw_text):
+        return f"I am sorry, sir. {_normalize_first_letter(raw_text)}"
+
     prefix = random.choice(PREFIXES)
-    
-    # Ensure raw_text is lowercase if following a comma prefix for natural flow
-    # e.g., "At once sir, volume set to 40."
-    first_char = raw_text[0].lower() if len(raw_text) > 0 else ""
-    remainder = raw_text[1:] if len(raw_text) > 1 else ""
-    
-    return f"{prefix} {first_char}{remainder}"
+    base = f"{prefix} {_normalize_first_letter(raw_text)}"
+
+    # Add a short interactive touch sometimes, without becoming noisy.
+    if random.random() < 0.28:
+        return f"{base} {random.choice(INTERACTIVE_FOLLOWUPS)}"
+
+    return base

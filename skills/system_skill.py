@@ -9,6 +9,7 @@ import ctypes
 import datetime
 import logging
 import os
+import random
 import subprocess
 import time
 
@@ -16,10 +17,16 @@ import time
 import pyautogui
 
 # 3. internal
-from config import APP_ALIASES, APP_PROPER_NAMES, APP_PROCESS_MAP
+from config import (
+    APP_ALIASES,
+    APP_PROPER_NAMES,
+    APP_PROCESS_MAP,
+    TTS_HUMAN_PAUSE_MIN_SEC,
+    TTS_HUMAN_PAUSE_MAX_SEC,
+)
 from core.safety import sanitise_app_name, is_path_protected
 from core.session import update as session_update, get as session_get
-from pipeline.memory import get_aliases
+from pipeline.memory import get_aliases, get_preference, save_preference
 
 logger = logging.getLogger('dna.skill.system')
 
@@ -712,6 +719,232 @@ def get_system_status() -> str:
         return f'Could not get system status: {str(e)}'
 
 
+def list_heavy_processes() -> str:
+    """List top 5 processes by recent CPU usage."""
+    try:
+        import psutil
+
+        sampled = []
+        for proc in psutil.process_iter(['pid', 'name']):
+            try:
+                proc.cpu_percent(interval=None)
+                sampled.append(proc)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+
+        time.sleep(0.2)
+
+        ranked = []
+        for proc in sampled:
+            try:
+                cpu = float(proc.cpu_percent(interval=None))
+                if cpu > 0.0:
+                    ranked.append((cpu, proc.info.get('name') or f'pid-{proc.pid}'))
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+
+        ranked.sort(key=lambda x: x[0], reverse=True)
+        top = ranked[:5]
+        if not top:
+            return 'No heavy CPU processes right now.'
+
+        summary = ', '.join([f'{name} at {round(cpu, 1)} percent' for cpu, name in top])
+        return f'Top CPU processes: {summary}.'
+    except Exception as e:
+        logger.error('list_heavy_processes failed: %s', e)
+        return f'Could not read process usage: {str(e)}'
+
+
+def kill_process(name: str) -> str:
+    """Terminate all processes matching a given name fragment."""
+    try:
+        import psutil
+
+        safe_name = sanitise_app_name(name)
+        if safe_name is None:
+            return 'That process name looks invalid. Please try again.'
+
+        target = safe_name.lower().strip()
+        target_no_ext = target[:-4] if target.endswith('.exe') else target
+
+        matches = []
+        for proc in psutil.process_iter(['pid', 'name']):
+            try:
+                proc_name = (proc.info.get('name') or '').lower()
+                proc_no_ext = proc_name[:-4] if proc_name.endswith('.exe') else proc_name
+                if target in proc_name or target_no_ext == proc_no_ext:
+                    matches.append(proc)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+
+        if not matches:
+            return f'No process named {safe_name} was found.'
+
+        terminated = 0
+        for proc in matches:
+            try:
+                proc.terminate()
+                terminated += 1
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+
+        if terminated == 0:
+            return f'Could not terminate {safe_name}. It may require elevated permissions.'
+        if terminated == 1:
+            return f'Terminated 1 process for {safe_name}.'
+        return f'Terminated {terminated} processes for {safe_name}.'
+    except Exception as e:
+        logger.error('kill_process failed: %s', e)
+        return f'Could not kill process: {str(e)}'
+
+
+def get_system_health() -> str:
+    """Return CPU, RAM and disk health summary."""
+    try:
+        import psutil
+
+        cpu = psutil.cpu_percent(interval=0.2)
+        ram = psutil.virtual_memory()
+        system_drive = os.environ.get('SYSTEMDRIVE', 'C:') + '\\'
+        disk = psutil.disk_usage(system_drive)
+        free_gb = round(ram.available / (1024 ** 3), 1)
+        return (
+            f'CPU is at {round(cpu, 1)} percent. '
+            f'RAM is {round(ram.percent, 1)} percent used, about {free_gb} gigabytes free. '
+            f'System drive is {round(disk.percent, 1)} percent used.'
+        )
+    except Exception as e:
+        logger.error('get_system_health failed: %s', e)
+        return f'Could not read system health: {str(e)}'
+
+
+def speak(text: str) -> str:
+    """Announce text via TTS. Used for workflow narration and context gathering."""
+    try:
+        from pipeline.tts import speak as tts_speak
+        tts_speak(text)
+
+        # Add subtle pacing so workflow speech sounds less mechanical.
+        pause_min = max(0.0, float(TTS_HUMAN_PAUSE_MIN_SEC))
+        pause_max = max(pause_min, float(TTS_HUMAN_PAUSE_MAX_SEC))
+        time.sleep(random.uniform(pause_min, pause_max))
+
+        session_update('suppress_next_tts', True)
+        return f'Speaking: {text}'
+    except Exception as e:
+        logger.error('speak failed: %s', e)
+        return f'Could not speak: {str(e)}'
+
+
+def gather_work_context() -> str:
+    """Prompt user for work context and store it for followups.
+    
+    Asks what the user is working on, captures response, and stores
+    it in session for the assistant to reference in followup messages.
+    """
+    try:
+        from pipeline.stt import listen_once
+
+        # Ask what the user is working on in a conversational tone.
+        speak('What are you working on right now, sir?')
+        time.sleep(0.8)
+        user_response = listen_once(timeout=10)
+
+        if not user_response or not user_response.strip():
+            speak('No worries, sir. I am ready when you need me.')
+            session_update('suppress_next_tts', True)
+            return 'No work context provided.'
+
+        clean_context = user_response.strip()
+        now_iso = datetime.datetime.now().isoformat()
+
+        # Store immediate context in session for runtime followups.
+        session_update('work_context', clean_context)
+        session_update('work_context_timestamp', now_iso)
+
+        # Persist context for continuity across restarts.
+        save_preference('work.context', clean_context)
+        save_preference('work.context.updated_at', now_iso)
+
+        # Ask a focused follow-up about how to assist.
+        speak('Got it. How can I assist you best: planning, coding, research, or reminders?')
+        time.sleep(0.6)
+        followup_response = listen_once(timeout=8)
+
+        if followup_response and followup_response.strip():
+            clean_followup = followup_response.strip()
+            session_update('work_followup_need', clean_followup)
+            session_update('work_followup_timestamp', datetime.datetime.now().isoformat())
+            save_preference('work.followup_need', clean_followup)
+            speak(f'Perfect. I will keep in mind that you want help with {clean_followup}.')
+            session_update('suppress_next_tts', True)
+            return f'Work context captured: {clean_context}. Follow-up captured: {clean_followup}.'
+
+        speak('Understood. I will stay proactive and support your work as needed.')
+        session_update('suppress_next_tts', True)
+        return f'Work context captured: {clean_context}.'
+    except Exception as e:
+        logger.error('gather_work_context failed: %s', e)
+        speak('I had trouble capturing that, but let me know if you need help.')
+        session_update('suppress_next_tts', True)
+        return f'Could not gather context: {str(e)}'
+
+
+def announce_app_opening(app_name: str) -> str:
+    """Announce when an app is being opened."""
+    try:
+        speak(f'Opening {app_name}.')
+        session_update('suppress_next_tts', True)
+        return f'Announced: {app_name}'
+    except Exception as e:
+        logger.error('announce_app_opening failed: %s', e)
+        return f'Could not announce: {str(e)}'
+
+
+def get_work_context_summary() -> str:
+    """Summarize the stored work context for continuity and follow-up."""
+    try:
+        context = session_get('work_context') or get_preference('work.context')
+        followup = session_get('work_followup_need') or get_preference('work.followup_need')
+
+        if not context:
+            return 'I do not have your work context yet. Say work mode and I will ask you.'
+
+        if followup:
+            return f'You are working on {context}, and you asked me to assist with {followup}.'
+        return f'You are currently working on {context}.'
+    except Exception as e:
+        logger.error('get_work_context_summary failed: %s', e)
+        return f'Could not read your work context: {str(e)}'
+
+
+def work_followup() -> str:
+    """Provide a contextual follow-up prompt based on saved work context."""
+    try:
+        context = session_get('work_context') or get_preference('work.context')
+        followup = session_get('work_followup_need') or get_preference('work.followup_need')
+
+        if not context:
+            prompt = 'I do not have your current task yet. What are you working on, sir?'
+            speak(prompt)
+            session_update('suppress_next_tts', True)
+            return prompt
+
+        if followup:
+            prompt = f'Quick check-in, sir: while you work on {context}, do you want me to help with {followup} now?'
+            speak(prompt)
+            session_update('suppress_next_tts', True)
+            return prompt
+
+        prompt = f'Quick check-in, sir: you are working on {context}. Should I help with planning, coding, research, or reminders?'
+        speak(prompt)
+        session_update('suppress_next_tts', True)
+        return prompt
+    except Exception as e:
+        logger.error('work_followup failed: %s', e)
+        return f'Could not run work follow-up: {str(e)}'
+
+
 # ════════════════════════════════════════════════════════════════════
 # Tool Registry
 # ════════════════════════════════════════════════════════════════════
@@ -741,8 +974,16 @@ TOOLS = {
     'lock_screen': lock_screen,
     'empty_recycle_bin': empty_recycle_bin,
     'get_system_status': get_system_status,
+    'list_heavy_processes': list_heavy_processes,
+    'kill_process': kill_process,
+    'get_system_health': get_system_health,
     'set_brightness': set_brightness,
     'get_brightness': get_brightness,
     'brightness_up': brightness_up,
     'brightness_down': brightness_down,
+    'speak': speak,
+    'gather_work_context': gather_work_context,
+    'announce_app_opening': announce_app_opening,
+    'get_work_context_summary': get_work_context_summary,
+    'work_followup': work_followup,
 }
