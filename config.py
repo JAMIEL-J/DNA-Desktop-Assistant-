@@ -77,7 +77,7 @@ WAKE_WORD_THRESHOLD = float(os.getenv('WAKE_WORD_THRESHOLD', '0.5'))
 WAKE_WORD_FRAMEWORK = os.getenv('WAKE_WORD_FRAMEWORK', 'onnx')
 GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY', '')
 GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
-CLOUD_LLM_MODEL = os.getenv('CLOUD_LLM_MODEL', 'gemini-1.5-flash')
+CLOUD_LLM_MODEL = os.getenv('CLOUD_LLM_MODEL', 'gemma-4-31b-it')
 OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'gemma4:e2b')
 OLLAMA_VISION_MODEL = os.getenv('OLLAMA_VISION_MODEL', 'moondream')
 OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://localhost:11434/api/chat')
@@ -86,6 +86,10 @@ OLLAMA_CTX_NORMAL = int(os.getenv('OLLAMA_CTX_NORMAL', '2048'))
 OLLAMA_CTX_THINKING = int(os.getenv('OLLAMA_CTX_THINKING', '2048'))
 OLLAMA_TEMPERATURE = float(os.getenv('OLLAMA_TEMPERATURE', '0.2'))
 OLLAMA_KEEP_ALIVE = os.getenv('OLLAMA_KEEP_ALIVE', '1m')
+
+# Career-Ops Settings
+CAREER_OPS_DIR = str(BASE_DIR / 'Job Search skill' / 'career-ops')
+CAREER_OPS_NODE_PATH = 'node' # Assumes node is in PATH
 
 # TTS Settings
 PIPER_VOICE = os.getenv('PIPER_VOICE', 'en_US-lessac-medium')
@@ -358,7 +362,7 @@ FOLDER_ALIASES = {
 JOB_ROLES = ["data analyst", "data scientist", "business analyst",
              "data engineer", "ml engineer"]
 JOB_LOCATION       = "South India"
-JOB_MAX_AGE_DAYS   = 14      # jobs posted in last 14 days
+JOB_MAX_AGE_DAYS   = 7      # jobs posted in last 7 days
 JOB_RESULTS_DIR    = str(BASE_DIR / 'data' / 'job_results')
 JOB_EXPERIENCE_LEVEL = "fresher"
 JOBS_ON_STARTUP    = True     # check for new jobs every morning on startup
