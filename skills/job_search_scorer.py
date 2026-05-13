@@ -1,66 +1,102 @@
-import datetime
+import re
+import logging
+from datetime import datetime, timedelta
+
+logger = logging.getLogger('dna.skill.job_search_scorer')
 
 class HybridScorer:
     def __init__(self):
-        self.high_tier_keywords = ["ai engineer", "research analyst", "data analyst"]
-        self.medium_tier_keywords = ["data", "fresher", "analyst"]
+        # Keyword matrices with word boundaries to prevent false positives
+        self.keyword_map = {
+            "High": [
+                r"\bdata analyst\b", r"\bresearch analyst\b", r"\bai engineer\b",
+                r"\bartificial intelligence engineer\b", r"\bml engineer\b"
+            ],
+            "Medium": [
+                r"\bdata\b", r"\banalyst\b", r"\bfresher\b", r"\bentry level\b",
+                r"\bjunior\b", r"\bscience\b", r"\bscientist\b"
+            ],
+            "Low": [] # Default tier
+        }
+        # Compile regex for efficiency
+        self.patterns = {
+            tier: re.compile("|".join(pats), re.IGNORECASE)
+            for tier, pats in self.keyword_map.items()
+        }
 
-    def tier_jobs(self, jobs):
-        """
-        Ranks jobs into High, Medium, and Low tiers based on title keywords.
-        """
-        results = []
+    def tier_jobs(self, jobs: list) -> list:
+        """Ranks jobs into High, Medium, or Low tiers based on title keywords."""
+        if not jobs:
+            return []
+
+        enriched_jobs = []
         for job in jobs:
             title = job.get("title", "").lower()
-
-            # High Tier Check
-            if any(kw in title for kw in self.high_tier_keywords):
+            if not title:
+                tier = "Low"
+            elif self.patterns["High"].search(title):
                 tier = "High"
-            # Medium Tier Check
-            elif any(kw in title for kw in self.medium_tier_keywords):
+            elif self.patterns["Medium"].search(title):
                 tier = "Medium"
             else:
                 tier = "Low"
 
-            # Create a copy to avoid modifying original data
-            job_copy = job.copy()
-            job_copy["tier"] = tier
-            results.append(job_copy)
+            # Create a copy to avoid mutating original data
+            enriched_job = job.copy()
+            enriched_job["tier"] = tier
+            enriched_jobs.append(enriched_job)
 
-        return results
+        return enriched_jobs
 
-    def filter_recency(self, jobs, reference_date=None):
+    def filter_recency(self, jobs: list, reference_date: datetime = None) -> list:
         """
-        Removes jobs older than 7 days and marks jobs within 24 hours as 'is_new'.
+        Filters jobs based on recency.
+        - Hard limit: Remove jobs > 7 days old.
+        - is_new: True if posted within last 24 hours.
         """
+        if not jobs:
+            return []
+
         if reference_date is None:
-            reference_date = datetime.date.today()
+            reference_date = datetime.now()
 
         filtered_jobs = []
         for job in jobs:
-            published_str = job.get("published", "")
+            published_str = job.get("published")
+            if not published_str:
+                continue
+
             try:
-                published_date = datetime.datetime.strptime(published_str, "%Y-%m-%d").date()
-            except (ValueError, TypeError):
-                # If date is missing or invalid, we skip the job
+                # Support a few common formats
+                date_val = None
+                for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+                    try:
+                        date_val = datetime.strptime(published_str, fmt)
+                        break
+                    except ValueError:
+                        continue
+
+                if date_val is None:
+                    logger.warning(f"Invalid date format for job: {published_str}")
+                    continue
+
+                # Future date check
+                if date_val > reference_date + timedelta(days=1):
+                    logger.warning(f"Future date detected for job: {published_str}")
+                    continue
+
+                # 7-day hard limit
+                delta = reference_date - date_val
+                if delta.days > 7:
+                    continue
+
+                # is_new flag (< 24 hours)
+                job_copy = job.copy()
+                job_copy["is_new"] = delta.total_seconds() < 86400
+                filtered_jobs.append(job_copy)
+
+            except Exception as e:
+                logger.error(f"Error processing date {published_str}: {e}")
                 continue
-
-            delta = reference_date - published_date
-
-            # Hard limit: Remove jobs > 7 days old
-            if delta.days > 7:
-                continue
-
-            # Negative delta (future date) is kept but not marked as new
-            if delta.days < 0:
-                # Handle future dates as current for simplicity, or just keep them
-                is_new = False
-            else:
-                # "is_new" flag: posted within last 24 hours (delta.days == 0)
-                is_new = (delta.days == 0)
-
-            job_copy = job.copy()
-            job_copy["is_new"] = is_new
-            filtered_jobs.append(job_copy)
 
         return filtered_jobs
