@@ -6,6 +6,7 @@ class DNAState(Enum):
     SLEEPING = 'sleeping'
     ACTIVE = 'active'
     PROCESSING = 'processing'
+    JOB_SEARCH = 'job_search'
 
 
 _state_lock = threading.Lock()

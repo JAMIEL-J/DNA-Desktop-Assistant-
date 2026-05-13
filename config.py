@@ -52,14 +52,31 @@ DB_PATH = BASE_DIR / os.getenv('DB_PATH', 'data/dna_memory.db')
 DUCK_PATH = BASE_DIR / os.getenv('DUCK_PATH', 'data/dna_duck.db')
 DOWNLOADS_DIR = _resolve_downloads_dir()
 
+# Organizer Skill
+DESKTOP_PATH = os.path.expanduser('~/Desktop')
+ORGANIZER_UNDO_LOG = str(BASE_DIR / 'data' / 'organizer_undo.json')
+ORGANIZER_CONFIRM_TIMEOUT = int(os.getenv('ORGANIZER_CONFIRM_TIMEOUT', '60'))
+
+# Screen / Vision Skill
+SCREENSHOTS_DIR = str(BASE_DIR / os.getenv('SCREENSHOTS_DIR', 'data/screenshots'))
+
+# Window Monitor
+WINDOW_MONITOR_INTERVAL = int(os.getenv('WINDOW_MONITOR_INTERVAL', '2'))
+WINDOW_ALERT_DELAY = int(os.getenv('WINDOW_ALERT_DELAY', '15'))
+
+# Weather Skill (OpenWeatherMap free tier — 1000 calls/day)
+WEATHER_API_KEY = os.getenv('WEATHER_API_KEY', '')
+WEATHER_DEFAULT_CITY = os.getenv('WEATHER_DEFAULT_CITY', 'Chennai')
+
 # Model Settings
-WHISPER_MODEL = os.getenv('WHISPER_MODEL', 'base')
-WHISPER_COMPUTE_TYPE = os.getenv('WHISPER_COMPUTE_TYPE', 'float32')
+WHISPER_MODEL = os.getenv('WHISPER_MODEL', 'small')
+WHISPER_COMPUTE_TYPE = os.getenv('WHISPER_COMPUTE_TYPE', 'int8')
 WHISPER_DEVICE = os.getenv('WHISPER_DEVICE', 'cpu')
 WAKE_WORD_MODEL = os.getenv('WAKE_WORD_MODEL', 'hey_jarvis')
 WAKE_WORD_THRESHOLD = float(os.getenv('WAKE_WORD_THRESHOLD', '0.5'))
 WAKE_WORD_FRAMEWORK = os.getenv('WAKE_WORD_FRAMEWORK', 'onnx')
 GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY', '')
+GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
 CLOUD_LLM_MODEL = os.getenv('CLOUD_LLM_MODEL', 'gemini-1.5-flash')
 OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'gemma4:e2b')
 OLLAMA_VISION_MODEL = os.getenv('OLLAMA_VISION_MODEL', 'moondream')
@@ -90,11 +107,11 @@ MIC_PRE_ROLL_SECONDS = float(os.getenv('MIC_PRE_ROLL_SECONDS', '0.30'))
 # Session Mode Settings
 AUTO_SLEEP_TIMEOUT = int(os.getenv('AUTO_SLEEP_TIMEOUT', '300'))
 SHORT_TRANSCRIPT_MIN = int(os.getenv('SHORT_TRANSCRIPT_MIN', '1'))
-CONFIDENCE_THRESHOLD = float(os.getenv('CONFIDENCE_THRESHOLD', '-1.4'))
+CONFIDENCE_THRESHOLD = float(os.getenv('CONFIDENCE_THRESHOLD', '-1.2'))
 TTS_SUPPRESS_MS = int(os.getenv('TTS_SUPPRESS_MS', '500'))
 ACTIVE_LISTEN_SECONDS = float(os.getenv('ACTIVE_LISTEN_SECONDS', '6.5'))
 ACTIVE_RETRY_SECONDS = float(os.getenv('ACTIVE_RETRY_SECONDS', '5.0'))
-STT_FAST_BEAM_SIZE = int(os.getenv('STT_FAST_BEAM_SIZE', '2'))
+STT_FAST_BEAM_SIZE = int(os.getenv('STT_FAST_BEAM_SIZE', '3'))
 STT_ROBUST_BEAM_SIZE = int(os.getenv('STT_ROBUST_BEAM_SIZE', '5'))
 
 # Suggestion Engine Settings
@@ -220,6 +237,12 @@ APP_ALIASES = {
     'clouder': r'shell:AppsFolder\Claude_pzs8sxrjxfjjc!Claude',
     'clawed': r'shell:AppsFolder\Claude_pzs8sxrjxfjjc!Claude',
     'clod': r'shell:AppsFolder\Claude_pzs8sxrjxfjjc!Claude',
+    'glod': r'shell:AppsFolder\Claude_pzs8sxrjxfjjc!Claude',
+    'glaoud': r'shell:AppsFolder\Claude_pzs8sxrjxfjjc!Claude',
+    'gloud': r'shell:AppsFolder\Claude_pzs8sxrjxfjjc!Claude',
+    'claud': r'shell:AppsFolder\Claude_pzs8sxrjxfjjc!Claude',
+    'clawd': r'shell:AppsFolder\Claude_pzs8sxrjxfjjc!Claude',
+    'klod': r'shell:AppsFolder\Claude_pzs8sxrjxfjjc!Claude',
     'antigravity': r'shell:AppsFolder\Google.Antigravity',
     'anti gravity': r'shell:AppsFolder\Google.Antigravity',
     'anti-gravity': r'shell:AppsFolder\Google.Antigravity',
@@ -254,6 +277,12 @@ APP_PROPER_NAMES = {
     'clawed': 'Claude',
     'clod': 'Claude',
     'claude': 'Claude',
+    'glod': 'Claude',
+    'glaoud': 'Claude',
+    'gloud': 'Claude',
+    'claud': 'Claude',
+    'clawd': 'Claude',
+    'klod': 'Claude',
     'whats up': 'WhatsApp',
     'whatsup': 'WhatsApp',
     'cap cut': 'CapCut',
@@ -270,6 +299,12 @@ APP_PROCESS_MAP = {
     'clouder': 'claude.exe',
     'clawed': 'claude.exe',
     'clod': 'claude.exe',
+    'glod': 'claude.exe',
+    'glaoud': 'claude.exe',
+    'gloud': 'claude.exe',
+    'claud': 'claude.exe',
+    'clawd': 'claude.exe',
+    'klod': 'claude.exe',
     'whatsapp': 'WhatsApp.Root.exe',
     'whats up': 'WhatsApp.Root.exe',
     'whatsup': 'WhatsApp.Root.exe',
@@ -320,7 +355,10 @@ FOLDER_ALIASES = {
 }
 
 # Job Search Settings
-JOBS_ROLES        = ["data analyst", "data science", "business analyst"]
-JOBS_LOCATION     = "South India"
-JOBS_MAX_AGE_DAYS = 7       # only show jobs posted in last 7 days
-JOBS_ON_STARTUP   = True    # check for new jobs every morning on startup
+JOB_ROLES = ["data analyst", "data scientist", "business analyst",
+             "data engineer", "ml engineer"]
+JOB_LOCATION       = "South India"
+JOB_MAX_AGE_DAYS   = 14      # jobs posted in last 14 days
+JOB_RESULTS_DIR    = str(BASE_DIR / 'data' / 'job_results')
+JOB_EXPERIENCE_LEVEL = "fresher"
+JOBS_ON_STARTUP    = True     # check for new jobs every morning on startup

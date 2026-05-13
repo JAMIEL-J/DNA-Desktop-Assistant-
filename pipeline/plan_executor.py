@@ -73,7 +73,7 @@ def invoke_tool(tool_name: str, args: dict[str, Any], tool_map: dict[str, Any]) 
         return f'Sorry, I need a little more info for that. Could you be more specific?'
     except Exception as e:
         logger.error('Tool execution failed for %s: %s', tool_name, e, exc_info=True)
-        return f'Could not complete that: {str(e)}'
+        return 'Sorry sir, I encountered an issue while trying to complete that task.'
 
 
 def execute_plan(plan: list[dict[str, Any]], tool_map: dict[str, Any]) -> str:

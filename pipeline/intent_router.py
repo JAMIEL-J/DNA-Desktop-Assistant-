@@ -220,22 +220,156 @@ SIMPLE_INTENTS = [
     (re.compile(r'\bsearch\s+google\s+(?:for\s+)?(.+)', re.I), 'search_google', lambda m: {'query': _clean_arg(m.group(1))}),
     (re.compile(r'\bgoogle\s+(?:for\s+)?(.+)', re.I), 'search_google', lambda m: {'query': _clean_arg(m.group(1))}),
 
-    # --- JOB SEARCH (before generic search catch-all) ---
-    (re.compile(r'\b(?:show|find|get|check|search|are there|any).+(?:job|opening|vacancies|hiring|position)', re.I),
-     'check_jobs', lambda m: {}),
-    (re.compile(r'\b(?:job|opening|vacancies).+(?:data analyst|data science|analyst|fresher)', re.I),
-     'check_jobs', lambda m: {}),
-    (re.compile(r'\b(?:is there|are there).+(?:opening|job|hiring|vacancy)', re.I),
-     'check_jobs', lambda m: {}),
-    (re.compile(r'\bwhat.+(?:job|opening).+(?:available|out there)', re.I),
-     'check_jobs', lambda m: {}),
-    (re.compile(r'\bopen\s+(?:job|naukri|indeed|internshala)\s+portal', re.I),
+    # --- JOB SEARCH MODE (triggers + role-specific) ---
+    (re.compile(r'\b(?:job\s+search\s+mode|start\s+job\s+search|jarvis\s+job\s+search)\b', re.I),
+     'enter_job_search_mode', lambda m: {}),
+    (re.compile(r'\b(?:job\s+search|search\s+jobs?)\s+(?:for\s+)?(?:data\s+analyst|analyst)\b', re.I),
+     'enter_job_search_mode', lambda m: {'role': 'data analyst'}),
+    (re.compile(r'\b(?:job\s+search|search\s+jobs?)\s+(?:for\s+)?(?:data\s+scien\w*|scientist)\b', re.I),
+     'enter_job_search_mode', lambda m: {'role': 'data scientist'}),
+    (re.compile(r'\b(?:job\s+search|search\s+jobs?)\s+(?:for\s+)?(?:business\s+analyst|BA)\b', re.I),
+     'enter_job_search_mode', lambda m: {'role': 'business analyst'}),
+    (re.compile(r'\b(?:job\s+search|search\s+jobs?)\s+(?:for\s+)?(?:data\s+engineer|DE)\b', re.I),
+     'enter_job_search_mode', lambda m: {'role': 'data engineer'}),
+    (re.compile(r'\b(?:job\s+search|search\s+jobs?)\s+(?:for\s+)?(?:ml|machine\s+learning)\b', re.I),
+     'enter_job_search_mode', lambda m: {'role': 'ml engineer'}),
+    # Role within generic phrasing (e.g. "find data analyst jobs")
+    (re.compile(r'\b(?:find|get|show)\s+(?:data\s+analyst|data\s+scientist|business\s+analyst|data\s+engineer|ml\s+engineer)\s+(?:jobs?|openings?|roles?)\b', re.I),
+     'enter_job_search_mode', lambda m: {'role': re.search(r'(data\s+analyst|data\s+scientist|business\s+analyst|data\s+engineer|ml\s+engineer)', m.group(0), re.I).group(1).lower()}),
+    # Generic job triggers (still enter mode)
+    (re.compile(r'\b(?:show|find|get|check|are there|any)\b.+\b(?:jobs?|openings?|vacancies|hiring|positions?)\b', re.I),
+     'enter_job_search_mode', lambda m: {}),
+    (re.compile(r'\b(?:is there|are there).+(?:opening|job|hiring|vacancy)\b', re.I),
+     'enter_job_search_mode', lambda m: {}),
+    (re.compile(r'\bwhat.+(?:job|opening).+(?:available|out there)\b', re.I),
+     'enter_job_search_mode', lambda m: {}),
+    # Portal opening (explicit "browse" or "open portal" — NOT "search jobs for X")
+    (re.compile(r'\bopen\s+(?:job|naukri|indeed|internshala)\s+portal\b', re.I),
      'open_job_portals', lambda m: {}),
-    (re.compile(r'\b(?:browse|search)\s+jobs\b', re.I),
+    (re.compile(r'\bbrowse\s+jobs\b', re.I),
      'open_job_portals', lambda m: {}),
 
-    # Generic search (catch-all — MUST be after specific search intents)
-    (re.compile(r'\bsearch\s+(?:for\s+)?(.+)', re.I), 'search_google', lambda m: {'query': _clean_arg(m.group(1))}),
+    # --- WEB SEARCH ---
+    # Explicit web search: "search the web for X", "look up X online"
+    (re.compile(r'\b(?:search\s+(?:the\s+)?web|web\s+search|look\s+up)\s+(?:for\s+)?(.+)', re.I),
+     'web_search', lambda m: {'query': _clean_arg(m.group(1))}),
+    # "does X have offers", "is X open today", "what is X price"
+    (re.compile(r'\b(?:does|is|are|what(?:\'s|\s+is))\s+(.+?)\s+(?:have|having|offering|open|available|price|cost|rate)\b', re.I),
+     'web_search', lambda m: {'query': m.group(0).strip()}),
+    # "check if X", "find out about X online"
+    (re.compile(r'\b(?:check\s+if|find\s+out)\s+(.+)', re.I),
+     'web_search', lambda m: {'query': _clean_arg(m.group(1))}),
+    # "read this page/url"
+    (re.compile(r'\b(?:read|summarize|summarise)\s+(?:this\s+)?(?:page|url|link|website)\s+(.+)', re.I),
+     'fetch_and_summarize', lambda m: {'url': _clean_arg(m.group(1))}),
+
+    # --- NEWS ---
+    # Topic-specific news
+    (re.compile(r'\b(?:latest|today(?:\'s)?|recent|current)\s+(?:ai|artificial\s+intelligence|ml|machine\s+learning)\s+news\b', re.I),
+     'get_ai_news', lambda m: {}),
+    (re.compile(r'\bai\s+news\b', re.I),
+     'get_ai_news', lambda m: {}),
+    (re.compile(r'\b(?:latest|today(?:\'s)?|recent)\s+tech(?:nology)?\s+news\b', re.I),
+     'get_tech_news', lambda m: {}),
+    (re.compile(r'\btech\s+news\b', re.I),
+     'get_tech_news', lambda m: {}),
+    (re.compile(r'\b(?:india|indian|domestic)\s+news\b', re.I),
+     'get_india_news', lambda m: {}),
+    (re.compile(r'\b(?:cricket|ipl)\s+(?:score|news|update|result)\b', re.I),
+     'get_cricket_score', lambda m: {}),
+    (re.compile(r'\b(?:cricket|ipl)\s+(?:score|news|update)\b', re.I),
+     'get_cricket_score', lambda m: {}),
+    # Generic "what's the news", "give me headlines"
+    (re.compile(r'\b(?:what(?:\'s|\s+is)\s+(?:the\s+)?(?:news|headline)|top\s+(?:news|stories|headline)|give\s+me\s+(?:the\s+)?(?:news|headline))\b', re.I),
+     'get_headlines', lambda m: {}),
+    # "news about X", "X news"
+    (re.compile(r'\bnews\s+(?:about|on|regarding)\s+(.+)', re.I),
+     'get_news', lambda m: {'topic': _clean_arg(m.group(1))}),
+    (re.compile(r'\b(.+?)\s+news\b', re.I),
+     'get_news', lambda m: {'topic': _clean_arg(m.group(1))}),
+
+    # --- WEATHER ---
+    (re.compile(r'\b(?:weather|temperature|temp)\s+(?:in|at|for|of)\s+(.+)', re.I),
+     'get_weather', lambda m: {'city': _clean_arg(m.group(1))}),
+    (re.compile(r'\b(?:what(?:\'s|\s+is)\s+(?:the\s+)?(?:weather|temperature|temp))\b', re.I),
+     'get_weather', lambda m: {}),
+    (re.compile(r'\b(?:how(?:\'s|\s+is)\s+(?:the\s+)?weather)\b', re.I),
+     'get_weather', lambda m: {}),
+    (re.compile(r'\b(?:forecast|weather\s+forecast)\s+(?:for\s+|in\s+)?(.+)', re.I),
+     'get_forecast', lambda m: {'city': _clean_arg(m.group(1))}),
+    (re.compile(r'\b(?:will\s+it\s+rain|is\s+it\s+(?:going\s+to\s+)?rain)\b', re.I),
+     'get_forecast', lambda m: {}),
+
+    # --- ORGANIZER SKILL ---
+    (re.compile(r'\b(?:organize|clean\s+up|sort|tidy)\s+(?:my\s+|the\s+)?(?:desktop|files)\b', re.I),
+     'preview_organize', lambda m: {}),
+    (re.compile(r'\b(?:organize|clean\s+up|sort|tidy)\s+(?:my\s+|the\s+)?(?:download|downloads)\b', re.I),
+     'organize_downloads', lambda m: {}),
+    (re.compile(r'\b(?:organize|sort|tidy)\s+(?:the\s+)?folder\s+(.+)', re.I),
+     'organize_folder', lambda m: {'path': _clean_arg(m.group(1))}),
+    (re.compile(r'\b(?:undo|reverse|revert)\s+(?:the\s+)?(?:organiz|move|sort)', re.I),
+     'undo_organize', lambda m: {}),
+    (re.compile(r'\b(?:clean|remove)\s+(?:the\s+)?(?:empty|blank)\s+(?:folder|director)', re.I),
+     'clean_empty_folders', lambda m: {}),
+
+    # --- SCREEN SKILL ---
+    # Read / describe screen
+    (re.compile(r'\b(?:what(?:\'s|\s+is)\s+on\s+(?:my\s+)?screen)\b', re.I),
+     'read_screen', lambda m: {'question': 'What is on this screen?'}),
+    (re.compile(r'\b(?:describe|read|look\s+at)\s+(?:my\s+)?screen\b', re.I),
+     'describe_screen', lambda m: {}),
+    (re.compile(r'\b(?:any\s+|what\s+|is\s+there\s+an?\s+)?errors?\s+(?:on|showing|visible)\b', re.I),
+     'find_error', lambda m: {}),
+    (re.compile(r'\bwhat\s+(?:window|app)\s+(?:am\s+i|is)\s+(?:in|open|active)\b', re.I),
+     'get_active_window', lambda m: {}),
+    (re.compile(r'\b(?:list|show|what\s+are)\s+(?:my\s+|all\s+)?(?:open\s+)?(?:windows|apps)\b', re.I),
+     'list_open_windows', lambda m: {}),
+    # Typing commands
+    (re.compile(r'\btype\s+(.+)\s+(?:in|into|on)\s+claude\b', re.I),
+     'type_into_claude', lambda m: {'text': _clean_arg(m.group(1))}),
+    (re.compile(r'\btype\s+(.+)\s+(?:in|into)\s+(?:vs\s*code|vscode|code)\b', re.I),
+     'type_into_vscode', lambda m: {'text': _clean_arg(m.group(1))}),
+    (re.compile(r'\btype\s+(.+)\s+and\s+(?:send|submit|enter)\b', re.I),
+     'type_and_send', lambda m: {'text': _clean_arg(m.group(1))}),
+    (re.compile(r'\btype\s+(.+)', re.I),
+     'type_text', lambda m: {'text': _clean_arg(m.group(1))}),
+
+    # --- CONVERSATIONAL QUESTIONS (voice answers via chat skill) ---
+    # These MUST come after all specific tool patterns (time, date, volume,
+    # system status, etc.) but BEFORE generic catch-alls.
+
+    # Question words: "what is X", "who is X", "how does X work", etc.
+    (re.compile(r'\b(?:what|who|when|where|why|how)\s+(?:is|are|was|were|do|does|did|can|could|would|should|will|has|have|had)\b.{3,}', re.I),
+     'chat', lambda m: {'question': m.group(0).strip()}),
+
+    # "tell me about X", "explain X", "describe X", "define X"
+    (re.compile(r'\b(?:tell\s+me\s+(?:about|the|some)?|explain|describe|define|summarize|summarise)\s+(.{3,})', re.I),
+     'chat', lambda m: {'question': m.group(0).strip()}),
+
+    # Follow-ups: "what about X", "how about X", "and X?"
+    (re.compile(r'\b(?:what\s+about|how\s+about|and\s+what\s+about|what\s+else)\s+(.+)', re.I),
+     'chat', lambda m: {'question': m.group(0).strip()}),
+
+    # "do you know X", "can you tell me X"
+    (re.compile(r'\b(?:do\s+you\s+know|can\s+you\s+tell\s+me|could\s+you\s+tell\s+me)\s+(.+)', re.I),
+     'chat', lambda m: {'question': m.group(0).strip()}),
+
+    # Conversational "search X" → voice answer (NOT browser)
+    # Explicit "search google" / "google X" already matched above → browser.
+    (re.compile(r'\bsearch\s+(?:for\s+)?(.{3,})', re.I),
+     'chat', lambda m: {'question': _clean_arg(m.group(1))}),
+
+    # "search it on google" / "open it in google" — explicit browser override
+    (re.compile(r'\b(?:search|look)\s+(?:it|that|this)\s+(?:on|in)\s+google\b', re.I),
+     'search_google', lambda m: {'query': ''}),
+
+    # Clear conversation: "forget the conversation", "clear chat", "new topic"
+    (re.compile(r'\b(?:forget|clear|reset|wipe)\s+(?:the\s+)?(?:conversation|chat|history|context)\b', re.I),
+     'clear_chat_history', lambda m: {}),
+    (re.compile(r'\b(?:new\s+topic|fresh\s+start|start\s+over)\b', re.I),
+     'clear_chat_history', lambda m: {}),
+
+    # Open URL (must be before generic open catch-all)
     (re.compile(r'\b(?:open|visit|go\s+to)\s+([\w.-]+\.[a-z]{2,})\b', re.I), 'open_url', lambda m: {'url': m.group(1).strip()}),
 
     # --- DATA ANALYSIS ---
@@ -353,6 +487,43 @@ def is_dismiss_command(text: str) -> bool:
 # Main Router
 # ════════════════════════════════════════════════════════════════════
 
+# ════════════════════════════════════════════════════════════════════
+# Context Bridge — Feed skill results into chat memory for follow-ups
+# ════════════════════════════════════════════════════════════════════
+
+# Skills whose results should be remembered so follow-up questions work.
+# E.g., "AI news" → result → "tell me more about the first one" → LLM knows context.
+_CONTEXTUAL_SKILLS = {
+    'get_ai_news', 'get_tech_news', 'get_india_news', 'get_cricket_score',
+    'get_headlines', 'get_news', 'morning_news_brief',
+    'web_search', 'fetch_and_summarize',
+    'get_weather', 'get_forecast',
+    'enter_job_search_mode', 'next_jobs', 'previous_jobs',
+    'chat',  # chat already handles its own, but this is a safety net
+    'read_screen', 'describe_screen', 'find_error',
+}
+
+
+def _inject_context(user_command: str, skill_result: str, tool_name: str) -> None:
+    """Inject a skill's command + result into chat history for follow-ups.
+
+    Only injects for contextual skills — skips trivial commands like
+    volume, time, brightness that don't need follow-up memory.
+    """
+    if tool_name not in _CONTEXTUAL_SKILLS:
+        return
+    if not skill_result or len(skill_result) < 10:
+        return
+
+    try:
+        from skills.chat_skill import _add_to_history
+        _add_to_history('user', user_command)
+        _add_to_history('assistant', skill_result)
+        logger.debug('Context injected for follow-up: %s (%d chars)', tool_name, len(skill_result))
+    except Exception as e:
+        logger.debug('Context injection skipped: %s', e)
+
+
 def route(command: str, allow_llm: bool = True) -> Optional[str]:
     """Route a voice command to the appropriate tool.
 
@@ -379,6 +550,53 @@ def route(command: str, allow_llm: bool = True) -> Optional[str]:
     workflow_result = _check_workflow(cleaned)
     if workflow_result is not None:
         return workflow_result
+
+    # ── Step 1.7: Organizer pending confirmation ──
+    # The organizer skill has its own yes/no flow (separate from dangerous tools).
+    try:
+        from skills.organizer_skill import has_pending, confirm_organize, cancel_organize
+        if has_pending():
+            if re.search(r'^(?:yes|yeah|go ahead|do it|confirm|proceed|sure|ok|okay)$', cleaned):
+                return humanize_response(confirm_organize())
+            if re.search(r'^(?:no|nope|cancel|stop|never mind|don\'t|dont)$', cleaned):
+                return humanize_response(cancel_organize())
+    except ImportError:
+        pass
+
+    # ── Step 1.8: Job search session commands ──
+    # When in job search mode, intercept navigation commands.
+    try:
+        from skills.job_search_skill import (
+            is_job_search_active, next_jobs, previous_jobs,
+            open_job, save_job, search_role, exit_job_search,
+        )
+        if is_job_search_active():
+            # Next batch
+            if re.search(r'\bnext\b', cleaned):
+                return humanize_response(next_jobs())
+            # Previous batch
+            if re.search(r'\b(?:previous|back|prev)\b', cleaned):
+                return humanize_response(previous_jobs())
+            # Open job by number
+            m = re.search(r'\bopen\s+(?:number\s+|job\s+)?(\d+)\b', cleaned)
+            if m:
+                return humanize_response(open_job(int(m.group(1))))
+            # Save/bookmark job by number
+            m = re.search(r'\b(?:save|bookmark)\s+(?:number\s+|job\s+)?(\d+)\b', cleaned)
+            if m:
+                return humanize_response(save_job(int(m.group(1))))
+            # Save current
+            if re.search(r'\b(?:save|bookmark)\s+(?:this|that|it)\b', cleaned):
+                return humanize_response(save_job(1))
+            # Switch role
+            m = re.search(r'\bsearch\s+(?:for\s+)?(data analyst|data scientist|business analyst|data engineer|ml engineer)\b', cleaned)
+            if m:
+                return humanize_response(search_role(m.group(1)))
+            # Exit job search
+            if re.search(r'\b(?:exit|stop|end|quit|leave)\s+job\s+search\b', cleaned):
+                return humanize_response(exit_job_search())
+    except ImportError:
+        pass
 
     # Avoid LLM fallback for standalone confirm/cancel when no action is pending.
     if re.fullmatch(r'(?:confirm(?:\s+(?:lock|restart|shutdown))?|cancel|abort|never\s+mind)', cleaned):
@@ -410,8 +628,19 @@ def route(command: str, allow_llm: bool = True) -> Optional[str]:
                 logger.warning('Dangerous tool "%s" requires confirmation', tool_name)
                 return humanize_response(warning)
 
-            result = tool_fn(**args)
-            return humanize_response(result)
+            try:
+                result = tool_fn(**args)
+                response = humanize_response(result)
+
+                # ── Feed skill results into chat history for follow-ups ──
+                # This enables: "AI news" → [headlines] → "tell me more about #1"
+                # Without this, the LLM has no idea what DNA just said.
+                _inject_context(cleaned, result, tool_name)
+
+                return response
+            except Exception as e:
+                logger.error('Regex tool execution failed for %s: %s', tool_name, e, exc_info=True)
+                return 'Sorry sir, I ran into a problem while executing that command.'
 
     # ── Step 3: LLM fallback ──
     logger.info('No simple intent matched for: "%s"', cleaned)

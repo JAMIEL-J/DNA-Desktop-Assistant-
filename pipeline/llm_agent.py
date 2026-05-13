@@ -111,7 +111,10 @@ def _build_system_prompt(tool_names: list[str]) -> str:
         'Valid outputs: '
         '{"tool":"tool_name","args":{...}} or '
         '{"plan":[{"tool":"tool_name","args":{},"use_prev_result":false}]}. '
-        'Use only available tools. If unclear, return '
+        'Use only available tools. If the user is asking a general knowledge '
+        'question, conversational query, or wants information (not a system action), '
+        'use {"tool":"chat","args":{"question":"the user question"}}. '
+        'If unclear, return '
         '{"tool":"clarify","args":{"question":"Your friendly clarification question."}}. '
         'If nothing fits, return {"tool":"unknown","args":{}}. '
         '\n\n'
@@ -128,6 +131,24 @@ def _build_system_prompt(tool_names: list[str]) -> str:
     if prefs:
         prefs_str = "\n".join([f"- {k}: {v}" for k, v in prefs.items()])
         base_prompt += f'USER PREFERENCES:\n{prefs_str}\n\n'
+
+    # Inject conversation history for follow-up context
+    try:
+        from skills.chat_skill import get_history_context
+        history = get_history_context(limit=4)
+        if history:
+            base_prompt += f'RECENT CONVERSATION:\n{history}\n\n'
+    except Exception:
+        pass
+
+    # Inject active window context for situational awareness
+    try:
+        from core.window_monitor import get_current_context
+        context = get_current_context()
+        if context:
+            base_prompt += f'CURRENT CONTEXT: {context}\n\n'
+    except Exception:
+        pass
 
     base_prompt += f'Available tools: {tools}.'
     return base_prompt

@@ -26,6 +26,7 @@ from config import (
     CONFIDENCE_THRESHOLD,
     STT_FAST_BEAM_SIZE,
     STT_ROBUST_BEAM_SIZE,
+    GROQ_API_KEY,
 )
 from core.session import update as session_update
 
@@ -44,21 +45,46 @@ WHISPER_PROMPT = (
     'what is the time, what is the date, '
     'what is the current system status, system status, computer status, cpu usage, '
     'shutdown, restart, lock screen, close, launch, '
-    'notion, open file explorer, open terminal, open edge, open vscode'
+    'notion, open file explorer, open terminal, open edge, open vscode, '
+    'Claude, open Claude, close Claude, Antigravity, open Antigravity, '
+    'WhatsApp, open WhatsApp, Tableau, CapCut, Anaconda, '
+    'analyze data, analyze the data, check jobs, show me jobs, '
+    'brightness, work mode, focus mode, end work, '
+    'search Google, search YouTube, open downloads, open documents, '
+    'organize my desktop, organize downloads, undo organize, '
+    'describe my screen, what is on my screen, type into Claude, '
+    'list open windows, what window am I in, any errors showing, '
+    'job search mode, start job search, search jobs, data analyst, '
+    'data scientist, business analyst, data engineer, ml engineer, '
+    'next, previous, back, open number, save number, bookmark, '
+    'exit job search, open job portal, browse jobs, '
+    'search the web for, look up, does KFC have offers, '
+    'AI news, tech news, India news, cricket score, headlines, '
+    'weather in Chennai, forecast, will it rain, temperature'
 )
 
 # Known words DNA expects — used for fuzzy correction
 _KNOWN_WORDS = {
     'notepad', 'chrome', 'calculator', 'explorer', 'terminal',
     'edge', 'vscode', 'paint', 'settings', 'task', 'notion', 'potion',
+    'claude', 'antigravity', 'whatsapp', 'tableau', 'capcut', 'anaconda',
+    'acrobat', 'vlc', 'tally',
     'volume', 'mute', 'unmute', 'screenshot', 'shutdown',
     'restart', 'pause', 'play', 'next', 'previous', 'skip',
     'open', 'close', 'launch', 'start', 'set', 'turn',
     'lock', 'screen', 'time', 'date', 'system', 'status', 'current', 'cpu', 'usage',
+    'brightness', 'brighter', 'dimmer', 'analyze', 'data', 'search',
+    'jobs', 'focus', 'work', 'mode', 'downloads', 'documents', 'desktop',
+    'google', 'youtube', 'confirm', 'cancel',
+    'organize', 'tidy', 'sort', 'undo', 'revert', 'folder',
+    'describe', 'type', 'window', 'windows', 'error', 'errors',
+    'weather', 'forecast', 'temperature', 'rain', 'news', 'headlines',
+    'cricket', 'score', 'web', 'offers', 'price',
 }
 
 # Common Whisper mishearings → correct word
 _CORRECTIONS = {
+    # ── Notepad mishearings ──
     'north bad': 'Notepad',
     'northbad': 'Notepad',
     'notbad': 'Notepad',
@@ -68,17 +94,80 @@ _CORRECTIONS = {
     'nord pad': 'Notepad',
     'not pad': 'Notepad',
     'knot pad': 'Notepad',
+    # ── Claude mishearings (very common on Indian-English STT) ──
+    'glod': 'claude',
+    'glaoud': 'claude',
+    'gloud': 'claude',
+    'glowd': 'claude',
+    'clod': 'claude',
+    'clowd': 'claude',
+    'clawed': 'claude',
+    'claud': 'claude',
+    'cloude': 'claude',
+    'clode': 'claude',
+    'klod': 'claude',
+    'klawd': 'claude',
+    'klaud': 'claude',
+    'claud ai': 'claude',
+    'glad': 'claude',
+    'glade': 'claude',
+    'glaud': 'claude',
+    'clawd': 'claude',
+    'clad': 'claude',
+    'glob': 'claude',
+    'claw': 'claude',
+    'clore': 'claude',
+    'klaude': 'claude',
+    # ── Antigravity mishearings ──
+    'anti gravity': 'antigravity',
+    'anti-gravity': 'antigravity',
+    'and the gravity': 'antigravity',
+    'anti grabity': 'antigravity',
+    'anti graviti': 'antigravity',
+    # ── Notion/WhatsApp mishearings ──
+    'no shun': 'notion',
+    'noshun': 'notion',
+    'lotion': 'notion',
+    'motion': 'notion',
+    'ocean': 'notion',
+    'what sap': 'whatsapp',
+    'whats up': 'whatsapp',
+    'what sup': 'whatsapp',
+    'whatssap': 'whatsapp',
+    # ── Other app mishearings ──
     'calculus': 'calculator',
     'crew': 'chrome',
     'crome': 'chrome',
     'krome': 'chrome',
+    'chrome e': 'chrome',
     'screen shut': 'screenshot',
     'screen shot': 'screenshot',
     'skull code': 'vscode',
     'vs coat': 'vscode',
+    'v s code': 'vscode',
+    'vis code': 'vscode',
+    'table': 'tableau',
+    'tab low': 'tableau',
+    'tablo': 'tableau',
+    'cap cut': 'capcut',
+    'kept cut': 'capcut',
+    'ana conda': 'anaconda',
+    'anacond': 'anaconda',
+    # ── Jarvis/wake word mishearings ──
     'jarvis': 'jarvis',
     'charlie': 'jarvis',
     'charlies': 'jarvis',
+    'travis': 'jarvis',
+    'jarvish': 'jarvis',
+    # ── Command word mishearings ──
+    'analyze': 'analyze',
+    'analyse': 'analyze',
+    'analyis': 'analyze',
+    'anna lies': 'analyze',
+    'anna lyze': 'analyze',
+    'shut down': 'shutdown',
+    'lock the screen': 'lock screen',
+    'bright ness': 'brightness',
     # Number corrections — teens
     'ten': '10',
     'eleven': '11',
@@ -176,6 +265,49 @@ def _get_model():
     return _model
 
 
+def _transcribe_groq(audio_data: np.ndarray) -> str:
+    """Send audio to Groq API for lightning-fast whisper-large-v3-turbo transcription."""
+    import io
+    import wave
+    import requests
+
+    # Convert float32 numpy array to 16-bit PCM WAV in memory
+    pcm16 = (audio_data * 32767).astype(np.int16)
+    wav_io = io.BytesIO()
+    with wave.open(wav_io, 'wb') as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)  # 16-bit
+        wav_file.setframerate(SAMPLE_RATE)
+        wav_file.writeframes(pcm16.tobytes())
+    wav_io.seek(0)
+
+    try:
+        start_time = time.time()
+        response = requests.post(
+            "https://api.groq.com/openai/v1/audio/transcriptions",
+            headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
+            files={"file": ("audio.wav", wav_io.read(), "audio/wav")},
+            data={
+                "model": "whisper-large-v3-turbo",
+                "language": "en",
+                "prompt": WHISPER_PROMPT[:800],
+                "temperature": "0"
+            },
+            timeout=10
+        )
+        response.raise_for_status()
+        text = response.json().get('text', '').strip()
+        logger.info('Groq STT complete in %.2fs (audio=%.1fs)', 
+                    time.time() - start_time, len(audio_data)/SAMPLE_RATE)
+        return text
+    except requests.exceptions.HTTPError as e:
+        logger.error("Groq STT failed: %s | Response: %s", e, e.response.text)
+        return ""
+    except Exception as e:
+        logger.error("Groq STT failed: %s", e)
+        return ""
+
+
 def transcribe(audio_data: np.ndarray, fast: bool = True, confidence_offset: float = 0.0) -> str:
     """Transcribe a numpy audio array to text.
 
@@ -196,8 +328,17 @@ def transcribe(audio_data: np.ndarray, fast: bool = True, confidence_offset: flo
         if audio_data.ndim > 1:
             audio_data = audio_data.mean(axis=1)
 
+        # ── Route to Groq Cloud STT if key is configured ──
+        if GROQ_API_KEY:
+            raw_text = _transcribe_groq(audio_data)
+            if raw_text:
+                return _correct_transcription(raw_text)
+            # Fallback to local if Groq fails
+            logger.warning("Falling back to local STT...")
+
+        # ── Local STT using faster-whisper ──
         model = _get_model()
-        logger.info('Starting transcription (audio_len=%.1fs)...', len(audio_data) / SAMPLE_RATE)
+        logger.info('Starting local transcription (audio_len=%.1fs)...', len(audio_data) / SAMPLE_RATE)
         
         beam_size = STT_FAST_BEAM_SIZE if fast else STT_ROBUST_BEAM_SIZE
         min_silence_ms = 550 if fast else 800

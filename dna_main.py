@@ -126,34 +126,29 @@ def _assistant_loop() -> None:
     session_update('is_listening', True)
 
     # Startup should keep the loyal aide tone from the first line.
-    speak(f'DNA is online. {get_wake_greeting()}')
+    speak('DNA is online.')
 
-    # ── Morning job check (silent if nothing new) ──
+    # ── Unified morning briefing (greeting + weather + news + jobs + suggestion) ──
     try:
-        from config import JOBS_ON_STARTUP
-        if JOBS_ON_STARTUP:
-            from skills.jobs_skill import morning_job_check
-            job_update = morning_job_check()
-            if job_update:
-                speak(job_update)
+        from core.morning_briefing import build_morning_briefing
+        briefing = build_morning_briefing()
+        if briefing:
+            speak(briefing)
     except Exception as e:
-        logger.debug('Morning job check skipped: %s', e)
+        logger.error('Morning briefing failed, falling back: %s', e)
+        # Fallback to basic greeting if briefing engine fails
+        from core.personality import get_wake_greeting
+        speak(get_wake_greeting())
 
-    # ── Behavioral hint (non-intrusive) ──
+
+    # ── Window monitor (proactive context awareness) ──
     try:
-        if SUGGESTIONS_ENABLED and STARTUP_SUGGESTIONS_ENABLED:
-            top_app = get_scored_startup_suggestion(
-                min_count=STARTUP_SUGGESTION_MIN_COUNT,
-                min_confidence=STARTUP_SUGGESTION_MIN_CONFIDENCE,
-                cooldown_minutes=STARTUP_SUGGESTION_COOLDOWN_MINUTES,
-            )
-        else:
-            top_app = None
-
-        if top_app:
-            speak(f'You usually open {top_app} around this time. Say open {top_app} if you want me to launch it.')
+        from core.window_monitor import WindowMonitor
+        _window_monitor = WindowMonitor()
+        _window_monitor.start()
+        logger.info('Window monitor started.')
     except Exception as e:
-        logger.debug('Hourly suggestion check skipped: %s', e)
+        logger.debug('Window monitor skipped: %s', e)
 
     last_input_time = time.time()
 
