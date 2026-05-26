@@ -29,7 +29,7 @@ Unlike cloud-based assistants, DNA never sends your voice, commands, or personal
 ### 🧠 **Intelligent Intent Routing**
 - **Fast Path (Regex)**: Lightning-fast execution for common commands (<10ms)
 - **Smart Path (LLM)**: Falls back to local LLM for complex, ambiguous requests
-  - **Primary**: Google Gemini 1.5 Flash (`gemini-1.5-flash` model, when `GOOGLE_API_KEY` is present)
+  - **Primary**: Gemini 1.5 Flash (`gemini-1.5-flash` model, when `GOOGLE_API_KEY` is present)
   - **Fallback**: Local Ollama models (100% offline, no API key needed)
 - **Confirmation Gates**: Dangerous operations require spoken confirmation for safety
 - **Context Awareness**: Resolves pronouns and maintains session state across commands
@@ -198,7 +198,7 @@ DNA includes 14+ modular skills for diverse functionality:
 🎤 Audio Input        → sounddevice (low-latency recording)
 🎙️ Wake Word           → openwakeword (efficient local detection)
 📝 Speech-to-Text      → faster-whisper (local transcription, int8 quantization)
-🧠 Language Model      → Google Gemini 1.5 Flash (optional) or Ollama (local fallback)
+🧠 Language Model      → Gemini 1.5 Flash (optional) or Ollama (local fallback)
 💬 Text-to-Speech      → Piper TTS (natural voices, ONNX runtime)
 📊 Data Processing     → DuckDB (NL2SQL) + Pandas (transformations)
 🔄 Automation          → pyautogui + Win32 APIs
@@ -380,9 +380,9 @@ WHISPER_MODEL=small                 # Options: tiny, base, small, medium, large
 WHISPER_COMPUTE_TYPE=int8           # Options: float32, int8, int4
 WHISPER_DEVICE=cpu                  # Options: cpu, cuda
 
-# LLM Priority Chain (Google Gemini)
-CLOUD_LLM_MODEL=gemini-1.5-flash    # Model API identifier (Google Gemini only)
-GOOGLE_API_KEY=your_key             # 1st priority: Google Gemini (optional)
+# LLM Priority Chain (Gemini)
+CLOUD_LLM_MODEL=gemini-1.5-flash    # Gemini 1.5 Flash API model (not used with Ollama)
+GOOGLE_API_KEY=your_key             # 1st priority: Gemini 1.5 Flash (optional)
 
 # LLM Fallback (Local)
 OLLAMA_MODEL=gemma2:2b              # 2nd priority: Local Ollama (no API key needed)
@@ -517,11 +517,11 @@ Add these to your `.env` file to control LLM response characteristics:
 
 ```env
 # Adjust temperature for more/less creativity
-OLLAMA_TEMPERATURE=0.2         # Lower = more focused, deterministic
-                               # Higher = more creative, varied
+OLLAMA_TEMPERATURE=0.2         # Lower = more focused, deterministic (0.0-1.0)
+                               # Default: 0.2 (supported as environment variable)
 ```
 
-Or modify directly in `pipeline/llm_agent.py` for code-level constants.
+This environment variable is loaded from `config.py` and controls Ollama model behavior.
 
 ---
 
@@ -597,7 +597,7 @@ Restart DNA after changing audio settings
 Solution: Lower OLLAMA_TEMPERATURE for faster, more focused responses
          (e.g., 0.1 for focused mode, 0.2 for balanced)
          or use smaller model (gemma2:2b instead of larger variants)
-         or switch to Google Gemini with GOOGLE_API_KEY
+         or switch to Gemini 1.5 Flash with GOOGLE_API_KEY
 ```
 
 ### STT Accuracy Issues
@@ -611,8 +611,10 @@ Solution: Increase SILENCE_THRESHOLD if environment is noisy
 ```
 Solution: 1. Check Ollama is running: ollama serve
          2. Check microphone permissions in Windows Settings
-         3. View logs: Open file explorer, navigate to: data\logs\dna.log
-            Or in command prompt: type data\logs\dna.log
+         3. View logs: 
+            - Open Command Prompt in project directory (Shift+Right-click > Open PowerShell)
+            - Run: type data\logs\dna.log
+            - Or simply open file manager and navigate to: data\logs\dna.log
 ```
 
 ### High CPU Usage
