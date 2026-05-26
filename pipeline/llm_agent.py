@@ -164,6 +164,21 @@ def _build_system_prompt(tool_names: list[str]) -> str:
     except Exception:
         pass
 
+    # Inject active data file context for data analysis follow-ups
+    try:
+        from core.session import get as session_get
+        active_file = session_get('active_file')
+        if active_file:
+            base_prompt += (
+                f'ACTIVE DATA FILE IN SESSION: {active_file}\n'
+                f'The user is currently analyzing this dataset. '
+                f'If the user asks a data-related follow-up question '
+                f'(e.g., about rows, columns, values, averages, counts, etc.), '
+                f'use {{"tool":"analyze_data","args":{{"path":"{active_file}","question":"the user question"}}}}.\n\n'
+            )
+    except Exception:
+        pass
+
     base_prompt += f'Available tools: {tools}.'
     return base_prompt
 

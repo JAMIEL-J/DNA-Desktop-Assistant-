@@ -217,6 +217,22 @@ class DataCatalog:
             logger.error('needs_reprofile failed: %s', e, exc_info=True)
             return True
 
+    def get_recent_dataset(self, n: int = 1) -> list[dict]:
+        """Return the N most recently analyzed datasets (cross-session).
+
+        This survives backend restarts because it reads from SQLite.
+        """
+        try:
+            with self._get_conn() as conn:
+                rows = conn.execute(
+                    "SELECT * FROM dataset_catalog ORDER BY last_analyzed DESC LIMIT ?",
+                    (n,)
+                ).fetchall()
+                return [dict(r) for r in rows]
+        except Exception as e:
+            logger.error('get_recent_dataset failed: %s', e, exc_info=True)
+            return []
+
     def _search_data_files(self, keyword: str = "") -> list[Path]:
         """Search common folders AND all drive roots for CSV/Excel files matching a keyword."""
         valid_exts = {'.csv', '.xlsx', '.xls'}

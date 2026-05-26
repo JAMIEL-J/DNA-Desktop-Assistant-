@@ -383,15 +383,22 @@ SIMPLE_INTENTS = [
     (re.compile(r'\b(?:open|visit|go\s+to)\s+([\w.-]+\.[a-z]{2,})\b', re.I), 'open_url', lambda m: {'url': m.group(1).strip()}),
 
     # --- DATA ANALYSIS ---
-    # "analyze the churn data file" → keyword='churn'
-    # "analyze the sales data" → keyword='sales'  
-    (re.compile(r'\b(?:analy[sz]e|check|summarize|look at)\s+(?:the\s+|my\s+)?(\w+)\s+(?:data|date)(?:\s+file)?\b', re.I),
-     'quick_analyze', lambda m: {'keyword': _clean_arg(m.group(1))}),
-    # "analyze my data" (no keyword)
-    (re.compile(r'\b(?:analy[sz]e|check|summarize|look at)\s+(?:my\s+|the\s+)?(?:data|date)\b', re.I),
-     'quick_analyze', lambda m: {}),
+    # "analyze my data and show the top earners" (no keyword, with optional question)
+    # MUST come before keyword pattern so "my" / "the" aren't captured as keywords
+    (re.compile(r'\b(?:analy[sz]e|check|summarize|look at)\s+(?:my|the)\s+(?:data|date)(?:\s+(?:and\s+)?(.+))?$', re.I),
+     'quick_analyze', lambda m: {'question': _clean_arg(m.group(1)) if m.group(1) else 'Give me a summary'}),
+    # "analyze the churn data file and say which..." → keyword='churn', question='say which...'
+    (re.compile(r'\b(?:analy[sz]e|check|summarize|look at)\s+(?:the\s+|my\s+)?(\w+)\s+(?:data|date)(?:\s+file)?(?:\s+(?:and\s+)?(.+))?$', re.I),
+     'quick_analyze', lambda m: {'keyword': _clean_arg(m.group(1)), 'question': _clean_arg(m.group(2)) if m.group(2) else 'Give me a summary'}),
     (re.compile(r'\b(?:what(?:\'s| is)\s+in\s+(?:my\s+|the\s+)?data)\b', re.I),
      'quick_analyze', lambda m: {}),
+    # --- DATA RECALL (cross-session) ---
+    # "open the recent data we analyzed" / "recall the last dataset" / "load previous data"
+    (re.compile(r'\b(?:open|load|recall|resume|bring\s+up|go\s+back\s+to|show)\s+(?:the\s+|my\s+)?(?:recent|last|previous|earlier)\s+(?:data|dataset|file)(?:\s+(?:we\s+)?(?:analy[sz]ed|worked\s+on|used|checked))?(?:\s+(?:and\s+)?(.+))?$', re.I),
+     'recall_data', lambda m: {'question': _clean_arg(m.group(1)) if m.group(1) else ''}),
+    # "what was the last data I analyzed"
+    (re.compile(r'\b(?:what|which)\s+(?:was|is)\s+(?:the\s+)?(?:last|recent|previous)\s+(?:data|dataset|file)\b', re.I),
+     'recall_data', lambda m: {}),
 
     # --- FOLDER COMMANDS (High Priority) ---
     (re.compile(r'\b(?:open|show|explorer|start|launch)\s+(?:the\s+|my\s+)?(.+)\s+folder\b', re.I),
@@ -511,6 +518,7 @@ _CONTEXTUAL_SKILLS = {
     'enter_job_search_mode', 'next_jobs', 'previous_jobs',
     'chat',  # chat already handles its own, but this is a safety net
     'read_screen', 'describe_screen', 'find_error',
+    'quick_analyze', 'analyze_data', 'recall_data',  # data analysis follow-ups
 }
 
 
@@ -613,6 +621,30 @@ def route(command: str, allow_llm: bool = True) -> Optional[str]:
     except ImportError:
         pass
 
+    # ── Step 1.9: Data analysis follow-up interceptor ──
+    # When a dataset is active in session and the user asks a data-related
+    # follow-up, route directly to the Data Engine (SQL) instead of Chat.
+    try:
+        from core.session import get as session_get
+        active_file = session_get('active_file')
+        if active_file:
+            _DATA_FOLLOWUP_PATTERNS = [
+                re.compile(r'\b(?:which|who|what|how many|how much|show|list|find|get|average|max|min|top|bottom|highest|lowest|count|total|sum|mean|median)\b', re.I),
+                re.compile(r'\b(?:salary|age|name|column|row|data|value|number|amount|percentage|rate|price|cost|revenue|profit|score|rating)\b', re.I),
+                re.compile(r'\b(?:compare|group|sort|filter|between|greater|less|more|above|below|over|under)\b', re.I),
+            ]
+            if any(p.search(cleaned) for p in _DATA_FOLLOWUP_PATTERNS):
+                logger.info('Data follow-up intercepted for active file: %s', active_file)
+                from skills.data_engine import run_analysis
+                from core.session import update as session_update
+                session_update('active_skill', 'data')
+                result = run_analysis(active_file, cleaned)
+                response = humanize_response(result)
+                _inject_context(cleaned, result, 'analyze_data')
+                return response
+    except ImportError:
+        pass
+
     # Avoid LLM fallback for standalone confirm/cancel when no action is pending.
     if re.fullmatch(r'(?:confirm(?:\s+(?:lock|restart|shutdown))?|cancel|abort|never\s+mind)', cleaned):
         return humanize_response('There is no pending action to confirm right now.')
@@ -650,6 +682,11 @@ def route(command: str, allow_llm: bool = True) -> Optional[str]:
                 skill = get_skill_for_tool(tool_name)
                 if skill:
                     session_update('active_skill', skill)
+
+                # Clear stale active_file when executing unrelated skills
+                # (keeps data context from bleeding into unrelated commands)
+                if tool_name not in ('quick_analyze', 'analyze_data', 'chat', 'clear_chat_history'):
+                    session_update('active_file', None)
 
                 result = tool_fn(**args)
                 response = humanize_response(result)

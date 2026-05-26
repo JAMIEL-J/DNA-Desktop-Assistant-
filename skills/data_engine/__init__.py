@@ -87,6 +87,15 @@ def _summarize_for_voice(question: str, result_df) -> str:
 def run_analysis(path: str, question: str) -> str:
     """Full analysis entry point routing requests based on mode (Phase 2 & 3)."""
     logger.info('Running analysis for: %s with question: %s', path, question)
+
+    # Track the active dataset in session for follow-up routing
+    try:
+        from core.session import update as session_update
+        session_update('active_file', path)
+        session_update('active_skill', 'data')
+    except Exception:
+        pass
+
     catalog = _get_catalog()
     profiler = DataProfiler()
     detector = PatternDetector()
@@ -220,3 +229,60 @@ def run_quick_analysis(question: str, keyword: str = "") -> str:
     filename = Path(dataset['file_path']).name
     result = run_analysis(dataset['file_path'], question)
     return f"Found {filename}. {result}"
+
+
+def recall_recent_data(question: str = "") -> str:
+    """Recall the most recently analyzed dataset from persistent history.
+
+    This enables cross-session memory — even after a restart, the user
+    can say "open the recent data we analyzed" and resume working.
+    """
+    logger.info('Recalling recent dataset from catalog')
+    catalog = _get_catalog()
+    recent = catalog.get_recent_dataset(n=1)
+
+    if not recent:
+        return "I don't have any previously analyzed datasets in my memory yet."
+
+    dataset = recent[0]
+    file_path = dataset.get('file_path', '')
+    file_name = dataset.get('file_name', 'unknown')
+    row_count = dataset.get('row_count', 0)
+    col_count = dataset.get('column_count', 0)
+    analysis_count = dataset.get('analysis_count', 0)
+    last_analyzed = dataset.get('last_analyzed', '')
+
+    # Verify the file still exists
+    if not Path(file_path).is_file():
+        return (
+            f"The last dataset I analyzed was {file_name}, "
+            f"but the file no longer exists at its original location."
+        )
+
+    # Restore active_file in session so follow-ups work
+    try:
+        from core.session import update as session_update
+        session_update('active_file', file_path)
+        session_update('active_skill', 'data')
+    except Exception:
+        pass
+
+    # If user also asked a question, run analysis on the recalled file
+    if question and question.strip():
+        result = run_analysis(file_path, question)
+        return f"Recalled {file_name}. {result}"
+
+    # Otherwise return a summary of the recalled dataset
+    friendly_time = ''
+    try:
+        dt = datetime.datetime.fromisoformat(last_analyzed)
+        friendly_time = f" last analyzed on {dt.strftime('%B %d at %I:%M %p')}"
+    except Exception:
+        pass
+
+    return (
+        f"I've recalled {file_name}{friendly_time}. "
+        f"It has {row_count} rows and {col_count} columns, "
+        f"and has been analyzed {analysis_count} time{'s' if analysis_count != 1 else ''} so far. "
+        f"You can now ask me anything about it."
+    )
