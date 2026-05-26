@@ -29,6 +29,8 @@ Unlike cloud-based assistants, DNA never sends your voice, commands, or personal
 ### 🧠 **Intelligent Intent Routing**
 - **Fast Path (Regex)**: Lightning-fast execution for common commands (<10ms)
 - **Smart Path (LLM)**: Falls back to local LLM for complex, ambiguous requests
+  - **Primary**: Google Gemini 1.5 Flash (when `GOOGLE_API_KEY` is present)
+  - **Fallback**: Local Ollama models (100% offline, no API key needed)
 - **Confirmation Gates**: Dangerous operations require spoken confirmation for safety
 - **Context Awareness**: Resolves pronouns and maintains session state across commands
 - **Morning Briefing**: Automatic weather, news, and job suggestions at startup
@@ -379,8 +381,9 @@ WHISPER_COMPUTE_TYPE=int8           # Options: float32, int8, int4
 WHISPER_DEVICE=cpu                  # Options: cpu, cuda
 
 # LLM Priority Chain
-GOOGLE_API_KEY=...                  # 1st priority (Gemini 1.5 Flash)
-OLLAMA_MODEL=gemma2:2b              # 2nd priority (local fallback)
+CLOUD_LLM_MODEL=gemini-1.5-flash    # Google Gemini model (requires GOOGLE_API_KEY)
+GOOGLE_API_KEY=your_key             # 1st priority: Gemini 1.5 Flash (optional)
+OLLAMA_MODEL=gemma2:2b              # 2nd priority: Local Ollama (no key needed)
 
 # Vision
 OLLAMA_VISION_MODEL=moondream       # For screenshot analysis
@@ -586,7 +589,8 @@ Restart DNA after changing audio settings
 
 ### Slow LLM Responses
 ```
-Solution: Increase OLLAMA_TEMPERATURE lower for faster responses
+Solution: Lower OLLAMA_TEMPERATURE for faster, more focused responses
+         (e.g., 0.1 for focused mode, 0.2 for balanced)
          or use smaller model (gemma2:2b instead of larger variants)
          or switch to Google Gemini with GOOGLE_API_KEY
 ```
@@ -602,7 +606,7 @@ Solution: Increase SILENCE_THRESHOLD if environment is noisy
 ```
 Solution: 1. Check Ollama is running: ollama serve
          2. Check microphone permissions in Windows Settings
-         3. Check logs: type logs/dna.log content
+         3. View logs: type logs\dna.log (or use any text editor)
 ```
 
 ### High CPU Usage
