@@ -67,17 +67,19 @@ class TestPhase4Routing(unittest.TestCase):
         self.assertEqual(parsed, {'tool': 'unknown', 'args': {}})
 
     def test_handle_complex_command_connection_error(self):
-        with patch('pipeline.llm_agent._call_ollama', side_effect=requests.exceptions.ConnectionError):
+        with patch('pipeline.llm_agent._call_llm', side_effect=requests.exceptions.ConnectionError):
             result = handle_complex_command('tell me a joke', {'get_time': lambda: 'The time is now.'})
-            self.assertIn('could not reach ollama', result.lower())
+            # Check for either the raw or humanized error message
+            self.assertTrue('could not reach ollama' in result.lower() or 'reach my brain' in result.lower())
 
     def test_handle_complex_command_clarify_response(self):
         with patch(
-            'pipeline.llm_agent._call_ollama',
+            'pipeline.llm_agent._call_llm',
             return_value={'tool': 'clarify', 'args': {'question': 'Which file should I open?'}},
         ):
             result = handle_complex_command('open the report', {'open_app': lambda app_name='': 'Opening app.'})
-            self.assertEqual(result, 'Which file should I open?')
+            # Since humanize_response wraps the result, we check for containment case-insensitively
+            self.assertIn('which file should i open?', result.lower())
 
 
 def run_optional_live_smoke() -> bool:

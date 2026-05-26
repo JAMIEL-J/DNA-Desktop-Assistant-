@@ -1,6 +1,10 @@
-# 🧬 DNA — Desktop Natural Assistant
+# 🧬 DNA (Desktop Natural Assistant)
 
-> **Your Personal AI Butler** — A privacy-first, offline-only voice assistant for Windows that responds to natural language commands with intelligent action.
+**DNA** is a professional-grade, privacy-first, fully offline voice assistant designed for Windows. It transforms the desktop experience by combining low-latency voice orchestration with deep OS integration and high-performance local data analysis.
+
+Unlike cloud-based assistants, DNA operates entirely on your hardware, ensuring that your voice, files, and data never leave your machine.
+
+---
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Windows Only](https://img.shields.io/badge/platform-Windows-blue.svg)](https://www.microsoft.com/windows)
@@ -9,77 +13,41 @@
 
 ---
 
-## 🎯 What is DNA?
+## 🚀 Core Capabilities
 
-**DNA (Desktop Natural Assistant)** is a sophisticated, voice-controlled desktop automation system built specifically for Windows. It combines advanced speech recognition, natural language processing, and intelligent intent routing to provide a seamless hands-free experience—all running **100% offline and locally** for maximum privacy.
+### 🎙️ Voice Orchestration
+- **Always-On Awareness**: Low-CPU wake word detection (OpenWakeWord) that triggers the assistant instantly.
+- **Intelligent Listening**: A multi-pass STT pipeline (Faster-Whisper) with transcript normalization and "incomplete command" detection to handle natural speech pauses.
+- **Natural Expression**: Low-latency offline TTS (Piper) with a **Hybrid Humanization Path** that blends LLM-generated personality with zero-latency local rephrasing.
 
-Unlike cloud-based assistants, DNA never sends your voice, commands, or personal data to external servers. Everything stays on your machine, processed by lightweight local AI models optimized for consumer hardware.
+### 🖥️ Deep OS Integration
+- **System Control**: Seamless management of volume, brightness, media, and power states.
+- **Process Intelligence**: Ability to list heavy processes, terminate tasks, and monitor system health proactively.
+- **File Mastery**: Fuzzy file searching, recursive directory exploration, and automated folder organization.
+- **Screen Awareness**: Local vision capabilities (Moondream) to describe the screen and debug errors in real-time.
 
----
+### 📊 Data Analysis Superpowers
+DNA implements a specialized **Data Routing Strategy** to handle datasets of any size:
+- **NL2SQL (via DuckDB)**: High-performance querying, filtering, and aggregation for massive datasets (10M+ rows) without memory overflow.
+- **NL2Py (via Sandboxed Pandas)**: Complex transformations, feature engineering, and visual plotting using a restricted Python execution environment.
+- **Automatic Routing**: DNA intelligently switches between DuckDB and Pandas based on row count (100K threshold) and intent.
 
-## ✨ Key Features
-
-### 🎤 **Voice Control**
-- **Natural Language Commands**: Speak in your own words, DNA understands context and nuance
-- **Wake Word Detection**: Say "Hey Jarvis" or "Hey DNA" to activate (supports custom wake words)
-- **Smart Session Mode**: Stays awake and responsive after activation, auto-sleeps when idle
-- **Continuation Capture**: Automatically captures multi-part commands for incomplete speech recognition
-- **Confidence-Based Retry**: Intelligently re-records if confidence is low
-
-### 🧠 **Intelligent Intent Routing**
-- **Fast Path (Regex)**: Lightning-fast execution for common commands (<10ms)
-- **Smart Path (LLM)**: Falls back to local LLM for complex, ambiguous requests
-  - **Primary**: Gemini 1.5 Flash (`gemini-1.5-flash` model, when `GOOGLE_API_KEY` is present)
-  - **Fallback**: Local Ollama models (100% offline, no API key needed)
-- **Confirmation Gates**: Dangerous operations require spoken confirmation for safety
-- **Context Awareness**: Resolves pronouns and maintains session state across commands
-- **Morning Briefing**: Automatic weather, news, and job suggestions at startup
-
-### 🛠️ **Rich Skill System**
-DNA includes 14+ modular skills for diverse functionality:
-
-| Skill | Capabilities |
-|-------|--------------|
-| **System Skill** | App/process management, volume, brightness, media control, window management |
-| **File Skill** | Open, copy, move, delete, organize files with voice confirmation |
-| **Data Skill** | Query CSV files, generate charts, perform data analysis with natural language |
-| **Browser Skill** | Search web, open websites, manage tabs |
-| **Chat Skill** | Conversation with local LLM, context-aware responses |
-| **Vision Skill** | Screenshot analysis, visual Q&A using local vision models |
-| **Screen Skill** | Capture, annotate, save screenshots |
-| **Weather Skill** | Real-time weather queries (OpenWeatherMap API) |
-| **News Skill** | Aggregated news updates, topic search |
-| **Job Search Skill** | Search job listings, filter by role, location, experience |
-| **Organizer Skill** | Smart file organization, undo support, batch operations |
-| **Learning Skill** | Educational queries, concept explanations |
-| **Web Skill** | HTTP requests, API interactions |
-
-### 🔐 **Privacy & Security**
-- ✅ **100% Offline Operation**: No cloud dependencies (except optional weather/news APIs)
-- ✅ **No Data Transmission**: Your voice and commands never leave your machine
-- ✅ **Path Protection**: Blocks access to critical Windows directories (C:\Windows, AppData)
-- ✅ **Sandboxed Execution**: Generated Python code runs in restricted namespace
-- ✅ **Confirmation Gates**: Sensitive operations require spoken approval
-- ✅ **Local Databases**: SQLite for memory/preferences, DuckDB for data queries
-
-### ⚡ **Performance Optimized**
-- Runs smoothly on **8GB RAM** systems
-- **4-bit quantization** for lightweight LLM inference
-- **Demand loading** for resource-heavy components
-- **Wake word detection** using efficient openwakeword
-- **Sub-100ms** command latency for regex-matched requests
-
-### 📊 **Data Analysis Capabilities**
-- Query large datasets using **natural language to SQL (NL2SQL)** with DuckDB
-- Generate charts and visualizations
-- Transform data using pandas for feature engineering
-- Support for CSV, Parquet, and structured databases
+### 🧠 Behavioral Intelligence
+- **Contextual Memory**: A session-aware resolver that handles pronouns ("open *that* file") and and maintains conversation history in SQLite.
+- **Multi-Step Planning**: The LLM doesn't just call tools; it generates **JSON Execution Plans**. DNA can find a file, analyze it, and then plot a chart—all from one command.
+- **Active Learning**: Learns user preferences and custom aliases (e.g., "my project" $\rightarrow$ `D:\Work\ProjectX`) dynamically.
+- **Proactive Monitoring**: Background daemon threads that alert you to CPU spikes or new downloads without being asked.
 
 ---
 
-## 🏗️ Architecture Overview
+---
 
-### Pipeline Flow (How DNA Works)
+## 🛠️ System Architecture
+
+### The Pipeline Flow
+
+DNA utilizes a sophisticated linear-to-agentic pipeline:
+`Wake Word` $\rightarrow$ `STT` $\rightarrow$ `Context Resolver` $\rightarrow$ `Intent Router` $\rightarrow$ `LLM Agent` $\rightarrow$ `Plan Executor` $\rightarrow$ `Skill Registry` $\rightarrow$ `TTS`
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -181,30 +149,40 @@ DNA includes 14+ modular skills for diverse functionality:
      └────────────────────────────────────┘
 ```
 
-### Core Components
+### Hybrid Routing Strategy
+To maximize responsiveness, DNA uses a two-tier routing system:
+1. **Fast Path (Regex)**: Common commands (volume, time, etc.) are matched against high-speed regex patterns and executed in $<10\text{ms}$.
+2. **Agent Path (LLM)****: Complex or ambiguous requests are routed to a local LLM (Gemma/Qwen via Ollama) which generates a structured tool-call plan.
 
-| Component | Location | Purpose |
-|-----------|----------|---------|
-| **Pipeline** | `pipeline/` | Audio I/O, STT, intent routing, LLM reasoning, plan execution |
-| **Skills** | `skills/` | 14+ modular tools for system control, data, web, vision |
-| **Core Logic** | `core/` | Session management, personality, safety enforcement, monitoring |
-| **UI** | `ui/` | System tray integration, desktop window, toast notifications |
-| **Config** | `config.py` | Environment variables, app aliases, audio settings, thresholds |
-| **Data Layer** | `data/` | SQLite for memory/preferences, DuckDB for data queries |
+### Safety-First Design
+Security is baked into the core:
+- **Confirmation Gates**: "Dangerous" tools (shutdown, lock, kill process) require a spoken confirmation.
+- **Path Protection**: Critical system directories (`C:\Windows`, `AppData`) are strictly blocked from file operations.
+- **Sandbox Execution**: All generated Python code for data analysis is run in a restricted namespace to prevent system modification.
 
-### Technology Stack
+---
 
-```
-🎤 Audio Input        → sounddevice (low-latency recording)
-🎙️ Wake Word           → openwakeword (efficient local detection)
-📝 Speech-to-Text      → faster-whisper (local transcription, int8 quantization)
-🧠 Language Model      → Gemini 1.5 Flash (optional) or Ollama (local fallback)
-💬 Text-to-Speech      → Piper TTS (natural voices, ONNX runtime)
-📊 Data Processing     → DuckDB (NL2SQL) + Pandas (transformations)
-🔄 Automation          → pyautogui + Win32 APIs
-💾 Memory/Preferences  → SQLite
-🎨 UI Framework        → PySide6 + system tray integration
-```
+---
+
+## 💻 Technical Stack
+
+| Component | Technology | Note |
+| :--- | :--- | :--- |
+| **LLM / Vision** | Gemma 2 / Qwen 3.5 / Moondream | Local via Ollama |
+| **Wake Word** | OpenWakeWord | ONNX Runtime |
+| **STT** | Faster-Whisper | CPU Optimized (int8) |
+| **TTS** | Piper | ONNX / Local |
+| **Data Engine** | DuckDB & Pandas | SQL $\rightarrow$ Py Routing |
+| **Memory** | SQLite | Session & History Persistence |
+| **UI** | PySide6 | Frameless Orb Interface |
+
+### Hardware Optimization (8GB RAM Budget)
+DNA is engineered to run on modest hardware (e.g., Intel i3, 8GB RAM):
+- **Quantization**: Uses 4-bit quantized models to minimize VRAM/RAM footprint.
+- **Demand Loading**: Vision models are loaded only when screen-reading is requested.
+- **Virtual Memory Strategy**: Synchronized with a 12GB SSD Page File to ensure absolute stability during spikes.
+
+---
 
 ---
 
@@ -286,6 +264,8 @@ DNA includes 14+ modular skills for diverse functionality:
 
 ---
 
+---
+
 ## 🎤 Usage Examples
 
 Once DNA is running, just speak naturally. Here are example commands:
@@ -346,6 +326,18 @@ Once DNA is running, just speak naturally. Here are example commands:
 "Focus mode"          # Opens VS Code, dims volume to 30%
 "End work"            # Takes screenshot, closes apps, resets volume
 ```
+
+---
+
+### Command Quick-Reference Table
+
+| User Says | DNA Action | Pipeline Path |
+| :--- | :--- | :--- |
+| *"Hey DNA, set volume to 40"* | Sets system volume to 40% | Regex $\rightarrow$ System Skill |
+| *"Open my sales report"* | Finds `sales_report.csv` $\rightarrow$ Opens in Excel | LLM $\rightarrow$ File Skill |
+| *"Analyze the churn data and plot a bar chart"* | DuckDB Query $\rightarrow$ Pandas Plot $\rightarrow$ PNG | LLM $\rightarrow$ Plan $\rightarrow$ Data Skill |
+| *"What error is showing on my screen?"* | Screenshot $\rightarrow$ Moondream $\rightarrow$ Spoken Description | LLM $\rightarrow$ Vision Skill |
+| *"Work mode"* | Launches VS Code, Browser, and opens project folder | Router $\rightarrow$ Workflow Plan |
 
 ---
 

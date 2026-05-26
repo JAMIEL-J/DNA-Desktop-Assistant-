@@ -366,3 +366,9 @@ JOB_MAX_AGE_DAYS   = 7      # jobs posted in last 7 days
 JOB_RESULTS_DIR    = str(BASE_DIR / 'data' / 'job_results')
 JOB_EXPERIENCE_LEVEL = "fresher"
 JOBS_ON_STARTUP    = True     # check for new jobs every morning on startup
+
+# Data Engine Settings
+ANALYSIS_OUTPUT_DIR = BASE_DIR / 'data' / 'analysis_output'
+DATA_ENGINE_SAMPLE_SIZE = int(os.getenv('DATA_ENGINE_SAMPLE_SIZE', '10000'))
+DATA_ENGINE_LARGE_THRESHOLD = int(os.getenv('DATA_ENGINE_LARGE_THRESHOLD', '100000'))
+

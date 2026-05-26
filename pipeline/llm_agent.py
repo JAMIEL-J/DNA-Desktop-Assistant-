@@ -111,8 +111,11 @@ def _build_system_prompt(tool_names: list[str]) -> str:
         'Valid outputs: '
         '{"tool":"tool_name","args":{...}} or '
         '{"plan":[{"tool":"tool_name","args":{},"use_prev_result":false}]}. '
-        'Use only available tools. If the user is asking a general knowledge '
-        'question, conversational query, or wants information (not a system action), '
+        'Use only available tools. '
+        'If the user wants you to write code, text, or scripts into an editor or window (such as VS Code, Claude, or the active screen), '
+        'use the typing tools (like type_into_vscode, type_into_claude, or type_text) and generate the full, actual code/text '
+        'to pass as the "text" argument. '
+        'If the user is asking a general knowledge question, conversational query, or wants information (not a system action), '
         'use {"tool":"chat","args":{"question":"the user question"}}. '
         'If unclear, return '
         '{"tool":"clarify","args":{"question":"Your friendly clarification question."}}. '
@@ -131,6 +134,17 @@ def _build_system_prompt(tool_names: list[str]) -> str:
     if prefs:
         prefs_str = "\n".join([f"- {k}: {v}" for k, v in prefs.items()])
         base_prompt += f'USER PREFERENCES:\n{prefs_str}\n\n'
+
+    # Inject persistent brain memory (Obsidian/CLAUDE.md style)
+    try:
+        from pathlib import Path
+        memory_file = Path("data/memory/corpus/persistent_memory.md")
+        if memory_file.exists():
+            mem_content = memory_file.read_text(encoding="utf-8").strip()
+            if mem_content:
+                base_prompt += f'PERSISTENT BRAIN MEMORY (OBSIDIAN):\n{mem_content}\n\n'
+    except Exception as e:
+        logger.debug("Failed to inject persistent memory to system prompt: %s", e)
 
     # Inject conversation history for follow-up context
     try:
@@ -188,20 +202,41 @@ def _call_ollama(command: str, tool_names: list[str]) -> dict[str, Any]:
 
     return _parse_llm_json(raw)
 
+_google_client = None
+
+def _get_google_client():
+    global _google_client
+    if _google_client is None:
+        import google.genai as genai
+        _google_client = genai.Client(api_key=GOOGLE_API_KEY)
+    return _google_client
+
 def _call_google(command: str, tool_names: list[str]) -> dict[str, Any]:
     """Call Google's Gemini API."""
-    genai = importlib.import_module('google.genai')
+    import tenacity
+    from google.genai.errors import ServerError
 
+    client = _get_google_client()
     system_instruction = _build_system_prompt(tool_names)
-    client = genai.Client(api_key=GOOGLE_API_KEY)
-    response = client.models.generate_content(
-        model=CLOUD_LLM_MODEL,
-        contents=command,
-        config={
-            'system_instruction': system_instruction,
-            'temperature': OLLAMA_TEMPERATURE,
-        },
+
+    @tenacity.retry(
+        retry=tenacity.retry_if_exception_type(ServerError),
+        stop=tenacity.stop_after_attempt(5),
+        wait=tenacity.wait_exponential(multiplier=1, min=0.5, max=3),
+        reraise=True
     )
+    def generate_with_retry():
+        return client.models.generate_content(
+            model=CLOUD_LLM_MODEL,
+            contents=command,
+            config={
+                'system_instruction': system_instruction,
+                'temperature': OLLAMA_TEMPERATURE,
+                'response_mime_type': 'application/json',
+            },
+        )
+
+    response = generate_with_retry()
     return _parse_llm_json(getattr(response, 'text', '') or '')
 
 def _call_llm(command: str, tool_names: list[str]) -> dict[str, Any]:

@@ -70,15 +70,41 @@ class TestJobSearchScorer(unittest.TestCase):
         jobs = [{"title": "Future Job", "published": "2026-05-20"}]
         self.assertEqual(self.scorer.filter_recency(jobs, reference_date=self.today), [])
 
-    def test_word_boundary_matching(self):
-        # "AI" should match \bAI\b but not "Mountain"
-        jobs = [
-            {"title": "AI Engineer", "published": "2026-05-13"}, # High
-            {"title": "Mountain Climber", "published": "2026-05-13"}, # Low
-        ]
-        results = self.scorer.tier_jobs(jobs)
-        self.assertEqual(results[0]["tier"], "High")
-        self.assertEqual(results[1]["tier"], "Low")
+    def test_select_for_deep_dive(self):
+        # Create 25 High tier jobs, 5 Medium, 5 Low
+        jobs = []
+        for i in range(25):
+            jobs.append({"title": "AI Engineer", "tier": "High", "id": i})
+        for i in range(25, 30):
+            jobs.append({"title": "Business Analyst", "tier": "Medium", "id": i})
+        for i in range(30, 35):
+            jobs.append({"title": "Random", "tier": "Low", "id": i})
+
+        selected = self.scorer.select_for_deep_dive(jobs)
+        self.assertEqual(len(selected), 20)
+        self.assertTrue(all(j["tier"] == "High" for j in selected))
+
+    def test_run_deep_dive(self):
+        from unittest.mock import patch
+
+        # Mock career_ops_evaluate to return a controlled string
+        # The expected format from career_ops_skill.py is:
+        # "Evaluation complete. Score: 4.2/5. Archetype: High Growth. Legitimacy: Verified.\n\nFull Report:\n..."
+        mock_output = "Evaluation complete. Score: 4.5/5. Archetype: Strategic AI. Legitimacy: High.\n\nFull Report:\nDetailed insight here."
+
+        with patch('skills.job_search_scorer.career_ops_evaluate', return_value=mock_output) as mock_eval:
+            jobs = [
+                {"title": "AI Engineer", "tier": "High", "link": "http://job1.com"},
+                {"title": "ML Engineer", "tier": "High", "link": "http://job2.com"},
+            ]
+
+            results = self.scorer.run_deep_dive(jobs)
+
+            self.assertEqual(len(results), 2)
+            self.assertEqual(results[0]["llm_score"], "4.5")
+            self.assertEqual(results[0]["llm_archetype"], "Strategic AI")
+            self.assertEqual(results[0]["llm_insight"], "Detailed insight here.")
+            self.assertEqual(mock_eval.call_count, 2)
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,7 +3,7 @@
 ## 🚀 Current Phase: Phase 17 — Suggestions & Behavioral Intelligence Foundation
 **Goal**: Move from static automation to adaptive behavior using usage history, confidence scoring, and cooldown policies.
 **Status**: ✅ Complete
-**Current Task**: Suggestion policy engine, historical backfill, cross-session continuity, workflow templates, and deeper OS controls are fully integrated.
+**Current Task**: Suggestion policy engine, historical backfill, cross-s`ession continuity, workflow templates, and deeper OS controls are fully integrated.
 
 ## 📋 Phase Tracker
 | Phase | Goal | Status |

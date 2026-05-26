@@ -307,6 +307,23 @@ def _assistant_loop() -> None:
 
 def main():
     """Boot DNA services and run UI + assistant engine."""
+    import sys
+    if len(sys.argv) > 1:
+        if sys.argv[1:3] == ['memory', 'sync']:
+            logger.info("Manually running Memory Graph Sync...")
+            try:
+                from pipeline.graph_processor import GraphProcessor
+                gp = GraphProcessor()
+                gp.update_graph()
+                logger.info("Memory Graph Sync completed.")
+            except Exception as e:
+                logger.error("Memory Graph Sync failed: %s", e)
+                sys.exit(1)
+            sys.exit(0)
+        else:
+            print("Usage: python dna_main.py [memory sync]")
+            sys.exit(1)
+
     import importlib
     from core.session import update as session_update, snapshot as session_snapshot
     from core.skill_registry import discover_skills

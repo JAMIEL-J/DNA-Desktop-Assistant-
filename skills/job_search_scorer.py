@@ -1,6 +1,7 @@
 import re
 import logging
 from datetime import datetime, timedelta
+from skills.career_ops_skill import career_ops_evaluate
 
 logger = logging.getLogger('dna.skill.job_search_scorer')
 
@@ -100,3 +101,55 @@ class HybridScorer:
                 continue
 
         return filtered_jobs
+
+    def select_for_deep_dive(self, jobs: list) -> list:
+        """Returns up to 20 jobs from the High tier for LLM evaluation."""
+        high_tier = [j for j in jobs if j.get("tier") == "High"]
+        return high_tier[:20]
+
+    def run_deep_dive(self, jobs: list) -> list:
+        """
+        Performs LLM evaluation on selected jobs using career_ops_evaluate.
+        Extracts Score, Archetype, and Insight from the report.
+        """
+        if not jobs:
+            return []
+
+        results = []
+        for job in jobs:
+            link = job.get("link")
+            if not link:
+                logger.warning(f"Job missing link for deep dive: {job.get('title', 'Unknown')}")
+                results.append(job)
+                continue
+
+            try:
+                # Pass link as JD text (career_ops_evaluate expects text, but may handle URLs if the node script does)
+                # Note: Requirements said 'career_ops_evaluate(link)', so we follow that.
+                report = career_ops_evaluate(link)
+
+                # Parse Score (e.g., "Score: 4.5/5")
+                score_match = re.search(r'Score: ([\d\.]+)/5', report)
+                # Parse Archetype (e.g., "Archetype: Strategic AI")
+                archetype_match = re.search(r'Archetype: ([^|]*)', report)
+                if archetype_match:
+                    archetype = archetype_match.group(1).strip()
+                    # Split by period or comma to remove legitimacy if it's in the same line
+                    archetype = re.split(r'\. | ,', archetype)[0].strip()
+                else:
+                    archetype = "N/A"
+
+                # Parse Insight (the "Full Report" part)
+                insight_match = re.search(r'Full Report:\n([\s\S]*)', report)
+
+                job_copy = job.copy()
+                job_copy["llm_score"] = score_match.group(1) if score_match else "N/A"
+                job_copy["llm_archetype"] = archetype
+                job_copy["llm_insight"] = insight_match.group(1).strip() if insight_match else "N/A"
+
+                results.append(job_copy)
+            except Exception as e:
+                logger.error(f"Error during deep dive for {link}: {e}")
+                results.append(job)
+
+        return results

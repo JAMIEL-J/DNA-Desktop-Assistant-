@@ -215,6 +215,11 @@ SIMPLE_INTENTS = [
     (re.compile(r'\b(?:what\s+am\s+i\s+working\s+on|what\s+was\s+i\s+working\s+on|my\s+work\s+context)\b', re.I), 'get_work_context_summary', lambda m: {}),
     (re.compile(r'\b(?:work\s+follow\s*up|follow\s*up\s+on\s+my\s+work|how\s+can\s+you\s+assist\s+me|assist\s+me\s+with\s+work)\b', re.I), 'work_followup', lambda m: {}),
 
+    # Memory Vault / Semantic Graph Commands
+    (re.compile(r'\b(?:sync|update|refresh)\s+(?:my\s+)?memory(?:\s+vault)?\b', re.I), 'sync_memory_vault', lambda m: {}),
+    (re.compile(r'\b(?:query|search|retrieve|what\s+(?:do\s+)?we\s+know\s+about|what(?:\'s| is)\s+in\s+(?:my\s+)?memory\s+about)\s+(.+)', re.I), 'query_memory_vault', lambda m: {'entity': _clean_arg(m.group(1))}),
+    (re.compile(r'\b(?:remember\s+that|save\s+to\s+memory\s+that|memorize\s+that)\s+(.+)', re.I), 'memorize_fact', lambda m: {'category': 'General', 'fact': _clean_arg(m.group(1))}),
+
     # --- SEARCH & NAVIGATION ---
     (re.compile(r'\b(?:play|search)\s+(.+)\s+on\s+youtube\b', re.I), 'search_youtube', lambda m: {'query': _clean_arg(m.group(1))}),
     (re.compile(r'\bsearch\s+google\s+(?:for\s+)?(.+)', re.I), 'search_google', lambda m: {'query': _clean_arg(m.group(1))}),

@@ -25,6 +25,9 @@ from config import (
     JOB_ROLES, JOB_LOCATION, JOB_MAX_AGE_DAYS,
     JOB_RESULTS_DIR, JOB_EXPERIENCE_LEVEL,
 )
+from skills.career_ops_skill import career_ops_scan, career_ops_evaluate
+from skills.job_search_scorer import HybridScorer
+from skills.job_search_dashboard import DashboardGenerator
 
 logger = logging.getLogger('dna.skill.job_search')
 
@@ -32,7 +35,7 @@ logger = logging.getLogger('dna.skill.job_search')
 
 ROLE_QUERIES = {
     "data analyst":     ["data analyst fresher", "data analyst entry level",
-                         "junior data analyst"],
+                         "junior data analyst", "research analyst fresher"],
     "data scientist":   ["data scientist fresher", "data science fresher",
                          "junior data scientist", "ml engineer fresher"],
     "business analyst": ["business analyst fresher", "junior business analyst",
@@ -41,8 +44,7 @@ ROLE_QUERIES = {
                          "ETL developer fresher"],
     "ml engineer":      ["machine learning engineer fresher", "ml engineer fresher",
                          "AI engineer fresher"],
-    "all":              ["data analyst fresher", "data scientist fresher",
-                         "business analyst fresher", "data engineer fresher"],
+    "all":              ["data analyst fresher", "research analyst fresher", "ai engineer fresher"],
 }
 
 SOUTH_INDIA_CITIES = [
@@ -215,6 +217,10 @@ def _fetch_internshala(role: str) -> list:
 
 def _run_search(role: str = "all") -> list:
     """Run full search for a role. Returns deduplicated sorted list."""
+    # 1. Use Career-Ops High-Fidelity Scanner first
+    logger.info('Invoking Career-Ops portal scan for role: %s', role)
+    career_ops_scan()
+
     queries = ROLE_QUERIES.get(role.lower(), ROLE_QUERIES["all"])
     all_jobs = []
 
@@ -222,58 +228,69 @@ def _run_search(role: str = "all") -> list:
         all_jobs += _fetch_indeed(query, days=JOB_MAX_AGE_DAYS)
         time.sleep(0.3)  # polite delay
 
+    # 2. Append Career-Ops Scanned Jobs (Company Portals)
+    from config import CAREER_OPS_DIR
+    scan_history_path = Path(CAREER_OPS_DIR) / 'data' / 'scan-history.tsv'
+    if scan_history_path.exists():
+        try:
+            with open(scan_history_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()[1:] # skip header
+                for line in lines:
+                    parts = line.strip().split('\t')
+                    if len(parts) >= 5:
+                        url, first_seen, portal, title, company = parts[:5]
+                        all_jobs.append({
+                            "title": title,
+                            "company": company,
+                            "location": f"Remote ({portal})", # Career-Ops portal
+                            "link": url,
+                            "source": "Company Portal",
+                            "published": first_seen
+                        })
+        except Exception as e:
+            logger.error("Failed to parse Career-Ops scan history: %s", e)
+
     # Internshala scrape
     internshala_role = role if role != "all" else "data"
     all_jobs += _fetch_internshala(internshala_role)
 
-    # ── Strict Filtering ──
-    # Internshala often ignores URL parameters and returns generic jobs from all over India.
-    # We must explicitly filter out non-South India locations and irrelevant job titles.
-    filtered_jobs = []
-    
-    # Define keywords based on the requested role
-    role_lower = role.lower()
-    valid_keywords = []
-    if role_lower in ["data analyst", "data scientist", "data engineer", "ml engineer", "all"]:
-        valid_keywords.extend(["data", "analyst", "analy", "science", "scientist", "machine learning", "ml", "engineer", "artificial intelligence", "ai"])
-    if role_lower in ["business analyst", "all"]:
-        valid_keywords.extend(["business", "ba"])
-        
-    for job in all_jobs:
-        # 1. Strict Location Filter
-        if not _is_south_india(job["location"]):
-            continue
-            
-        # 2. Strict Title Filter (must match at least one relevant keyword)
-        title_lower = job["title"].lower()
-        
-        # Exclude obvious junk that sneaks into data searches
-        if any(junk in title_lower for junk in ["sales", "counsellor", "counselor", "business development", "bde", "bda", "marketing", "hr", "human resource"]):
-            continue
-            
-        if valid_keywords:
-            import re
-            # Create a regex pattern with word boundaries for short acronyms like "ai", "ml", "ba"
-            # For longer words, regular matching is fine, but regex handles both safely.
-            pattern = r'\b(?:' + '|'.join(re.escape(kw) for kw in valid_keywords) + r')\b'
-            # Also allow partial matches for longer keywords just in case (like 'analy' in 'analytics')
-            long_kws = [kw for kw in valid_keywords if len(kw) > 3]
-            
-            has_match = bool(re.search(pattern, title_lower)) or any(kw in title_lower for kw in long_kws)
-            if not has_match:
-                continue
-                
-        filtered_jobs.append(job)
+    # ── Hybrid Scoring Pipeline ──
+    scorer = HybridScorer()
+
+    # 1. Recency filter (7-day limit, adds is_new flag)
+    filtered_jobs = scorer.filter_recency(all_jobs)
+
+    # 2. Tiering (High, Medium, Low)
+    tiered_jobs = scorer.tier_jobs(filtered_jobs)
+
+    # 3. Selection for LLM Deep Dive (Top 20 High Tier)
+    deep_dive_selection = scorer.select_for_deep_dive(tiered_jobs)
+
+    # 4. Run LLM Deep Dive (Scores, Archetypes, Insights)
+    deep_dive_results = scorer.run_deep_dive(deep_dive_selection)
+
+    # 5. Merge deep dive results back into the main list
+    # Use link as unique key for merging
+    final_jobs = []
+    deep_dive_map = {j['link']: j for j in deep_dive_results}
+
+    for job in tiered_jobs:
+        link = job.get('link')
+        if link in deep_dive_map:
+            final_jobs.append(deep_dive_map[link])
+        else:
+            final_jobs.append(job)
 
     # Deduplicate and sort by recency (Internshala first since fresher-focused)
-    unique = _deduplicate(filtered_jobs)
+    unique = _deduplicate(final_jobs)
     internshala = [j for j in unique if j["source"] == "Internshala"]
     indeed      = [j for j in unique if j["source"] == "Indeed"]
+    company     = [j for j in unique if j["source"] == "Company Portal"]
 
-    logger.info('Job search for "%s": %d Indeed + %d Internshala = %d unique',
-                role, len(indeed), len(internshala), len(unique))
+    logger.info('Job search for "%s": %d Indeed + %d Internshala + %d Company Portals = %d unique',
+                role, len(indeed), len(internshala), len(company), len(unique))
 
-    return internshala + indeed   # Internshala first
+    return internshala + company + indeed   # Prioritize fresher jobs, then direct portals, then Indeed
 
 
 def _save_to_csv(jobs: list, role: str) -> str:
@@ -316,6 +333,20 @@ def _speak_jobs(jobs: list, start: int = 0, count: int = 5) -> str:
 
 # ── Session Tools ─────────────────────────────────────────────────────────────
 
+def evaluate_current_job() -> str:
+    """Evaluate the currently open job in the search session using Career-Ops A-F scoring."""
+    if not _search_session["active"] or not _search_session["results"]:
+        return "No active job search. Say job search mode to start."
+
+    idx = _search_session["current_index"]
+    if idx >= len(_search_session["results"]):
+        return "No job selected to evaluate."
+
+    job = _search_session["results"][idx]
+    link = job["link"]
+
+    return f"Evaluating {job['title']} at {job['company']}...\n\n{career_ops_evaluate(link)}"
+
 def enter_job_search_mode(role: str = "all") -> str:
     """
     Enter job search mode. Fetch results and speak first 5.
@@ -340,16 +371,28 @@ def enter_job_search_mode(role: str = "all") -> str:
     # Save to CSV silently
     csv_path = _save_to_csv(jobs, role)
 
-    result  = f"Entering job search mode. Searching for {role_label} fresher roles in South India. "
+    # Generate and open Visual Dashboard
+    try:
+        generator = DashboardGenerator()
+        html_content = generator.generate(jobs)
+
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        dashboard_path = os.path.join(JOB_RESULTS_DIR, f"jobs_dashboard_{date_str}.html")
+
+        with open(dashboard_path, "w", encoding="utf-8") as f:
+            f.write(html_content)
+
+        webbrowser.open(f"file://{os.path.abspath(dashboard_path)}")
+        dashboard_msg = f" Visual Dashboard opened in browser."
+    except Exception as e:
+        logger.error(f"Failed to generate dashboard: {e}")
+        dashboard_msg = ""
+
+    result  = f"Entering high-fidelity job search mode (powered by Career-Ops). Searching for {role_label} fresher roles in South India. "
     result += f"Found {len(jobs)} fresher openings. "
     result += _speak_jobs(jobs, 0, 5)
-    result += f" Full list saved to {Path(csv_path).name}."
+    result += f" Full list saved to {Path(csv_path).name} and{dashboard_msg}"
 
-    # Open first job in browser
-    try:
-        webbrowser.open(jobs[0]["link"])
-    except Exception:
-        pass
 
     return result
 
@@ -507,4 +550,5 @@ TOOLS = {
     "search_role":           search_role,
     "open_job_portals":      open_job_portals,
     "exit_job_search":       exit_job_search,
+    "evaluate_current_job":  evaluate_current_job,
 }
