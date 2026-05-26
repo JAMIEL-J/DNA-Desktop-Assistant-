@@ -29,7 +29,7 @@ Unlike cloud-based assistants, DNA never sends your voice, commands, or personal
 ### 🧠 **Intelligent Intent Routing**
 - **Fast Path (Regex)**: Lightning-fast execution for common commands (<10ms)
 - **Smart Path (LLM)**: Falls back to local LLM for complex, ambiguous requests
-  - **Primary**: Google Gemini 1.5 Flash (when `GOOGLE_API_KEY` is present)
+  - **Primary**: Gemini 1.5 Flash (when `GOOGLE_API_KEY` is present)
   - **Fallback**: Local Ollama models (100% offline, no API key needed)
 - **Confirmation Gates**: Dangerous operations require spoken confirmation for safety
 - **Context Awareness**: Resolves pronouns and maintains session state across commands
@@ -511,12 +511,15 @@ SYSTEM_COMMAND_PATTERNS = [
 
 ### Tuning LLM Behavior
 
-Modify `pipeline/llm_agent.py`:
+Add these to your `.env` file to control LLM response characteristics:
 
-```python
+```env
 # Adjust temperature for more/less creativity
-OLLAMA_TEMPERATURE=0.2         # Lower = more focused
+OLLAMA_TEMPERATURE=0.2         # Lower = more focused, deterministic
+                               # Higher = more creative, varied
 ```
+
+Or modify directly in `pipeline/llm_agent.py` for code-level constants.
 
 ---
 
@@ -606,7 +609,8 @@ Solution: Increase SILENCE_THRESHOLD if environment is noisy
 ```
 Solution: 1. Check Ollama is running: ollama serve
          2. Check microphone permissions in Windows Settings
-         3. View logs: type logs\dna.log (or use any text editor)
+         3. View logs (Windows): type data\logs\dna.log or notepad data\logs\dna.log
+         4. Or find the log file at: DNA-Desktop-Assistant-/data/logs/dna.log
 ```
 
 ### High CPU Usage
