@@ -303,7 +303,8 @@ def _save_to_csv(jobs: list, role: str) -> str:
 
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f,
-            fieldnames=["title", "company", "location", "link", "source", "published"])
+            fieldnames=["title", "company", "location", "link", "source", "published"],
+            extrasaction='ignore')
         writer.writeheader()
         writer.writerows(jobs)
 
@@ -463,7 +464,8 @@ def save_job(number: int = 1) -> str:
 
     with open(saved_path, "a", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f,
-            fieldnames=["title", "company", "location", "link", "source", "published"])
+            fieldnames=["title", "company", "location", "link", "source", "published"],
+            extrasaction='ignore')
         if not file_exists:
             writer.writeheader()
         writer.writerow(job)

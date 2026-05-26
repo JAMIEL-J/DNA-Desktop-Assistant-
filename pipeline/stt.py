@@ -8,9 +8,11 @@ from collections import deque
 
 # 2. third-party
 import numpy as np
+# pyrefly: ignore [missing-import]
 from faster_whisper import WhisperModel
 
 # 3. internal
+# pyrefly: ignore [missing-import]
 import sounddevice as sd
 
 from config import (
@@ -38,16 +40,17 @@ _model_lock = threading.Lock()
 
 # Vocabulary prompt — primes Whisper to expect these words
 WHISPER_PROMPT = (
-    'Hey Jarvis, open notepad, open chrome, open calculator, '
+    'DNA, vscode, VS Code, close vscode, close vs code, double, canvas, window, registry, data, analyze, active_file, python, terminal, chrome, edge, spotify, zoom. '
+    'Hey Jarvis, open notepad, close notepad, open chrome, close chrome, open calculator, close calculator, '
     'volume, mute, unmute, screenshot, '
     'set volume to 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, '
     'play, pause, next track, previous track, '
     'what is the time, what is the date, '
     'what is the current system status, system status, computer status, cpu usage, '
     'shutdown, restart, lock screen, close, launch, '
-    'notion, open file explorer, open terminal, open edge, open vscode, '
+    'notion, open file explorer, open terminal, open edge, '
     'Claude, open Claude, close Claude, Antigravity, open Antigravity, '
-    'WhatsApp, open WhatsApp, Tableau, CapCut, Anaconda, '
+    'WhatsApp, open WhatsApp, close WhatsApp, Tableau, CapCut, Anaconda, '
     'analyze data, analyze the data, check jobs, show me jobs, '
     'brightness, work mode, focus mode, end work, '
     'search Google, search YouTube, open downloads, open documents, '
@@ -65,6 +68,7 @@ WHISPER_PROMPT = (
 
 # Known words DNA expects — used for fuzzy correction
 _KNOWN_WORDS = {
+    'dna', 'spotify', 'zoom', 'canvas', 'double', 'registry',
     'notepad', 'chrome', 'calculator', 'explorer', 'terminal',
     'edge', 'vscode', 'paint', 'settings', 'task', 'notion', 'potion',
     'claude', 'antigravity', 'whatsapp', 'tableau', 'capcut', 'anaconda',
@@ -146,6 +150,24 @@ _CORRECTIONS = {
     'vs coat': 'vscode',
     'v s code': 'vscode',
     'vis code': 'vscode',
+    'vs vscode': 'vscode',
+    'visual studio vscode': 'vscode',
+    'via score': 'vscode',
+    'via code': 'vscode',
+    'vs code': 'vscode',
+    'visual studio code': 'vscode',
+    'close vs vscode': 'close vscode',
+    'close visual studio vscode': 'close vscode',
+    'close via score': 'close vscode',
+    'close via code': 'close vscode',
+    'close vs code': 'close vscode',
+    'close visual studio code': 'close vscode',
+    'open vs vscode': 'open vscode',
+    'open visual studio vscode': 'open vscode',
+    'open via score': 'open vscode',
+    'open via code': 'open vscode',
+    'open vs code': 'open vscode',
+    'open visual studio code': 'open vscode',
     'table': 'tableau',
     'tab low': 'tableau',
     'tablo': 'tableau',
@@ -290,7 +312,7 @@ def _transcribe_groq(audio_data: np.ndarray) -> str:
             data={
                 "model": "whisper-large-v3-turbo",
                 "language": "en",
-                "prompt": WHISPER_PROMPT[:800],
+                "prompt": WHISPER_PROMPT[:1000],
                 "temperature": "0"
             },
             timeout=10
