@@ -77,6 +77,7 @@ class AssistantWebWindow:
         self._last_command = None
         self._last_result = None
         self._last_audio_level = None
+        self._last_active_skill = None
         self._proc_primed = False
         self._running = False
         self._html_path = Path(__file__).resolve().parent / 'dna_ui.html'
@@ -146,6 +147,11 @@ class AssistantWebWindow:
         if self._last_audio_level is None or abs(audio_level - self._last_audio_level) > 0.02:
             self._hub.broadcast({'type': 'audio_level', 'level': audio_level})
             self._last_audio_level = audio_level
+
+        active_skill = snap.get('active_skill')
+        if active_skill != self._last_active_skill:
+            self._hub.broadcast({'type': 'skill', 'skill': active_skill})
+            self._last_active_skill = active_skill
 
     def _push_metrics(self) -> None:
         metrics = self._collect_metrics()

@@ -8,6 +8,7 @@ _lock = threading.Lock()
 _state = {
     'active_file': None,
     'active_app': None,
+    'active_skill': None,
     'last_result': None,
     'last_df': None,
     'last_command': None,

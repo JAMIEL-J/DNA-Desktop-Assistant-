@@ -11,13 +11,15 @@ from pathlib import Path
 logger = logging.getLogger('dna.registry')
 
 _TOOL_MAP = {}
+_TOOL_TO_SKILL_MAP = {}
 _DISCOVERED = False
 
 
 def discover_skills(skills_dir: str | Path = None) -> None:
     """Dynamically scan and load all *_skill.py modules and merge their TOOLS."""
-    global _TOOL_MAP, _DISCOVERED
+    global _TOOL_MAP, _TOOL_TO_SKILL_MAP, _DISCOVERED
     _TOOL_MAP.clear()
+    _TOOL_TO_SKILL_MAP.clear()
 
     if skills_dir is None:
         skills_dir = Path(os.getcwd()) / 'skills'
@@ -47,6 +49,22 @@ def discover_skills(skills_dir: str | Path = None) -> None:
                     logger.warning('Tool name collision in %s: %s. Overwriting!', module_name, overlap)
                 
                 _TOOL_MAP.update(mod.TOOLS)
+                
+                # Parse skill name from module name
+                parts = module_name.split('.')
+                skill_name = parts[-1].replace('_skill', '')
+                if skill_name == 'organizer':
+                    skill_name = 'org'
+                elif skill_name == 'system':
+                    skill_name = 'sys'
+                elif skill_name == 'job_search':
+                    skill_name = 'jobs'
+                elif skill_name == 'data_skill':
+                    skill_name = 'data'
+
+                for tool_name in mod.TOOLS.keys():
+                    _TOOL_TO_SKILL_MAP[tool_name] = skill_name
+                
                 logger.debug('Loaded %d tools from %s', loaded_count, module_name)
             else:
                 logger.debug('Module %s has no valid TOOLS dict. Skipping.', module_name)
@@ -55,6 +73,13 @@ def discover_skills(skills_dir: str | Path = None) -> None:
 
     _DISCOVERED = True
     logger.info('Skill discovery complete. Loaded %d tools.', len(_TOOL_MAP))
+
+
+def get_skill_for_tool(tool_name: str) -> str | None:
+    """Return the skill identifier corresponding to the given tool name."""
+    if not _DISCOVERED:
+        discover_skills()
+    return _TOOL_TO_SKILL_MAP.get(tool_name)
 
 
 def get_tool_map() -> dict:

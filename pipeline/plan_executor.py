@@ -65,6 +65,13 @@ def invoke_tool(tool_name: str, args: dict[str, Any], tool_map: dict[str, Any]) 
             for key, value in (args or {}).items()
             if key in signature.parameters
         }
+        
+        # Update active skill
+        from core.skill_registry import get_skill_for_tool
+        skill = get_skill_for_tool(tool_name)
+        if skill:
+            session_update('active_skill', skill)
+            
         result_val = str(tool_fn(**filtered_args))
         session_update('last_result', result_val)
         return result_val

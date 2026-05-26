@@ -140,6 +140,11 @@ def _check_confirmation(command: str) -> Optional[str]:
         tool_fn = get_tool_map().get(tool_name)
         if tool_fn:
             try:
+                from core.skill_registry import get_skill_for_tool
+                from core.session import update as session_update
+                skill = get_skill_for_tool(tool_name)
+                if skill:
+                    session_update('active_skill', skill)
                 result = tool_fn(**args)
                 return humanize_response(result)
             except Exception as e:
@@ -561,9 +566,12 @@ def route(command: str, allow_llm: bool = True) -> Optional[str]:
     try:
         from skills.organizer_skill import has_pending, confirm_organize, cancel_organize
         if has_pending():
+            from core.session import update as session_update
             if re.search(r'^(?:yes|yeah|go ahead|do it|confirm|proceed|sure|ok|okay)$', cleaned):
+                session_update('active_skill', 'org')
                 return humanize_response(confirm_organize())
             if re.search(r'^(?:no|nope|cancel|stop|never mind|don\'t|dont)$', cleaned):
+                session_update('active_skill', 'org')
                 return humanize_response(cancel_organize())
     except ImportError:
         pass
@@ -576,6 +584,8 @@ def route(command: str, allow_llm: bool = True) -> Optional[str]:
             open_job, save_job, search_role, exit_job_search,
         )
         if is_job_search_active():
+            from core.session import update as session_update
+            session_update('active_skill', 'jobs')
             # Next batch
             if re.search(r'\bnext\b', cleaned):
                 return humanize_response(next_jobs())
@@ -634,6 +644,13 @@ def route(command: str, allow_llm: bool = True) -> Optional[str]:
                 return humanize_response(warning)
 
             try:
+                # Update active skill
+                from core.skill_registry import get_skill_for_tool
+                from core.session import update as session_update
+                skill = get_skill_for_tool(tool_name)
+                if skill:
+                    session_update('active_skill', skill)
+
                 result = tool_fn(**args)
                 response = humanize_response(result)
 
