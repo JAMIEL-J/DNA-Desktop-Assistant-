@@ -29,7 +29,7 @@ Unlike cloud-based assistants, DNA never sends your voice, commands, or personal
 ### 🧠 **Intelligent Intent Routing**
 - **Fast Path (Regex)**: Lightning-fast execution for common commands (<10ms)
 - **Smart Path (LLM)**: Falls back to local LLM for complex, ambiguous requests
-  - **Primary**: Gemini 1.5 Flash (when `GOOGLE_API_KEY` is present)
+  - **Primary**: Google Gemini 1.5 Flash (`gemini-1.5-flash` model, when `GOOGLE_API_KEY` is present)
   - **Fallback**: Local Ollama models (100% offline, no API key needed)
 - **Confirmation Gates**: Dangerous operations require spoken confirmation for safety
 - **Context Awareness**: Resolves pronouns and maintains session state across commands
@@ -380,10 +380,12 @@ WHISPER_MODEL=small                 # Options: tiny, base, small, medium, large
 WHISPER_COMPUTE_TYPE=int8           # Options: float32, int8, int4
 WHISPER_DEVICE=cpu                  # Options: cpu, cuda
 
-# LLM Priority Chain
-CLOUD_LLM_MODEL=gemini-1.5-flash    # Google Gemini model (requires GOOGLE_API_KEY)
-GOOGLE_API_KEY=your_key             # 1st priority: Gemini 1.5 Flash (optional)
-OLLAMA_MODEL=gemma2:2b              # 2nd priority: Local Ollama (no key needed)
+# LLM Priority Chain (Google Gemini)
+CLOUD_LLM_MODEL=gemini-1.5-flash    # Model API identifier (Google Gemini only)
+GOOGLE_API_KEY=your_key             # 1st priority: Google Gemini (optional)
+
+# LLM Fallback (Local)
+OLLAMA_MODEL=gemma2:2b              # 2nd priority: Local Ollama (no API key needed)
 
 # Vision
 OLLAMA_VISION_MODEL=moondream       # For screenshot analysis
@@ -609,8 +611,8 @@ Solution: Increase SILENCE_THRESHOLD if environment is noisy
 ```
 Solution: 1. Check Ollama is running: ollama serve
          2. Check microphone permissions in Windows Settings
-         3. View logs (Windows): type data\logs\dna.log or notepad data\logs\dna.log
-         4. Or find the log file at: DNA-Desktop-Assistant-/data/logs/dna.log
+         3. View logs: Open file explorer, navigate to: data\logs\dna.log
+            Or in command prompt: type data\logs\dna.log
 ```
 
 ### High CPU Usage
