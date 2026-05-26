@@ -152,7 +152,7 @@ DNA utilizes a sophisticated linear-to-agentic pipeline:
 ### Hybrid Routing Strategy
 To maximize responsiveness, DNA uses a two-tier routing system:
 1. **Fast Path (Regex)**: Common commands (volume, time, etc.) are matched against high-speed regex patterns and executed in $<10\text{ms}$.
-2. **Agent Path (LLM)****: Complex or ambiguous requests are routed to a local LLM (Gemma/Qwen via Ollama) which generates a structured tool-call plan.
+2. **Agent Path (LLM)**: Complex or ambiguous requests are routed to a local LLM (Gemma/Qwen via Ollama) which generates a structured tool-call plan.
 
 ### Safety-First Design
 Security is baked into the core:
