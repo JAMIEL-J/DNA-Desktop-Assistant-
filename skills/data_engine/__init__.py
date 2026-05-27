@@ -56,8 +56,18 @@ def _format_profile_for_voice(profile: dict, findings: list[dict]) -> str:
 
 def _summarize_for_voice(question: str, result_df) -> str:
     """Pass a query result through the LLM to get a voice-friendly summary."""
+    import pandas as pd
+
+    # Check if this is a describe() / summary dataframe
+    is_describe = False
     try:
-        table_str = result_df.head(20).to_string(index=False)
+        is_describe = any(x in result_df.index for x in ['count', 'mean', 'min', 'max'])
+    except Exception:
+        pass
+
+    try:
+        show_index = not isinstance(result_df.index, pd.RangeIndex)
+        table_str = result_df.head(20).to_string(index=show_index)
         prompt = (
             f"You are a friendly voice assistant. Convert this data result into a short, "
             f"natural-sounding sentence suitable for speaking aloud.\n"
@@ -79,14 +89,88 @@ def _summarize_for_voice(question: str, result_df) -> str:
     except Exception as e:
         logger.warning('Voice summarization failed: %s', e)
 
+    # Programmatic fallback for describe()
+    if is_describe:
+        try:
+            parts = []
+            count_val = None
+            if 'count' in result_df.index:
+                counts = result_df.loc['count'].dropna()
+                if not counts.empty:
+                    count_val = int(counts.iloc[0])
+            
+            if count_val is not None:
+                parts.append(f"The dataset contains {count_val} rows.")
+            else:
+                parts.append("Here is a summary of the dataset.")
+
+            for col in result_df.columns:
+                col_series = result_df[col]
+                # Numeric column summary
+                if 'mean' in col_series.index and not pd.isna(col_series.get('mean')):
+                    mean_val = col_series['mean']
+                    min_val = col_series.get('min', None)
+                    max_val = col_series.get('max', None)
+                    col_summary = f"For column '{col}', the average is {mean_val:.1f}"
+                    if min_val is not None and max_val is not None and not pd.isna(min_val) and not pd.isna(max_val):
+                        col_summary += f", ranging from {min_val:.1f} to {max_val:.1f}"
+                    col_summary += "."
+                    parts.append(col_summary)
+                # Categorical column summary
+                elif 'unique' in col_series.index and not pd.isna(col_series.get('unique')):
+                    uniq_val = int(col_series['unique'])
+                    top_val = col_series.get('top', None)
+                    col_summary = f"Column '{col}' has {uniq_val} unique values"
+                    if top_val is not None and not pd.isna(top_val):
+                        col_summary += f", with '{top_val}' being the most common"
+                    col_summary += "."
+                    parts.append(col_summary)
+            
+            if parts:
+                return " ".join(parts)
+        except Exception as ex:
+            logger.warning('Programmatic describe fallback failed: %s', ex)
+
     # Fallback: return raw table if summarization fails
-    display_res = result_df.head(10).to_string(index=False)
-    return f'Here is the result: {display_res}'
+    show_index = not isinstance(result_df.index, pd.RangeIndex)
+    display_res = result_df.head(10).to_string(index=show_index)
+    return f'Here is the result:\n{display_res}'
+
+
+def _format_query_log(profiler_queries: list, engine_query: str = None) -> str:
+    """Format executed SQL queries into a markdown block."""
+    if not profiler_queries and not engine_query:
+        return ""
+        
+    lines = [
+        "**📊 Database Queries Run:**",
+        "```sql"
+    ]
+    
+    # 1. Profiler queries
+    for desc, query in profiler_queries:
+        lines.append(f"-- {desc}")
+        lines.append(f"{query};\n")
+        
+    # 2. Engine query
+    if engine_query:
+        lines.append("-- User Query: Answer specific question")
+        lines.append(f"{engine_query};")
+        
+    lines.append("```\n")
+    return "\n".join(lines)
 
 
 def run_analysis(path: str, question: str) -> str:
     """Full analysis entry point routing requests based on mode (Phase 2 & 3)."""
     logger.info('Running analysis for: %s with question: %s', path, question)
+
+    # Speak verbal status cue to keep user engaged
+    try:
+        from pipeline.tts import speak
+        speak("Running the SQL code for the dataset, sir. Analyzing the KPIs...")
+    except Exception as e:
+        logger.debug("TTS status update failed: %s", e)
 
     # Track the active dataset in session for follow-up routing
     try:
@@ -133,7 +217,8 @@ def run_analysis(path: str, question: str) -> str:
             generated_sql=sql,
             findings_json=findings
         )
-        return result_summary
+        query_log_md = _format_query_log(profiler.query_log, sql)
+        return f"{query_log_md}{result_summary}"
 
     elif mode == OutputMode.DEEP_REPORT:
         from .analyst import DataAnalyst
@@ -183,7 +268,8 @@ def run_analysis(path: str, question: str) -> str:
             charts_json=chart_paths,
             report_path=report_path
         )
-        return result_summary
+        query_log_md = _format_query_log(profiler.query_log)
+        return f"{query_log_md}{result_summary}"
 
     elif mode == OutputMode.EXPORT:
         from .query_engine import QueryEngine
@@ -211,7 +297,8 @@ def run_analysis(path: str, question: str) -> str:
             generated_sql=sql,
             report_path=str(export_path.resolve())
         )
-        return result_summary
+        query_log_md = _format_query_log(profiler.query_log, sql)
+        return f"{query_log_md}{result_summary}"
 
     return "Unknown routing classification."
 

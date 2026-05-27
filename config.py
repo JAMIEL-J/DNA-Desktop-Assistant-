@@ -367,12 +367,11 @@ FOLDER_ALIASES = {
 }
 
 # Job Search Settings
-JOB_ROLES = ["data analyst", "data scientist", "business analyst",
-             "data engineer", "ml engineer"]
-JOB_LOCATION       = "South India"
+JOB_ROLES = ["data analyst", "business analyst", "research analyst"]
+JOB_LOCATION       = "India"
 JOB_MAX_AGE_DAYS   = 7      # jobs posted in last 7 days
 JOB_RESULTS_DIR    = str(BASE_DIR / 'data' / 'job_results')
-JOB_EXPERIENCE_LEVEL = "fresher"
+JOB_EXPERIENCE_LEVEL = "fresher"       # entry-level only — excludes mid/senior
 JOBS_ON_STARTUP    = True     # check for new jobs every morning on startup
 
 # Data Engine Settings

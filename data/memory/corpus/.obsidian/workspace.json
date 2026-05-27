@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "persistent_memory.md",
+                "file": "graphify-out/dna_upgrade_architecture_graph.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "persistent_memory"
+              "title": "dna_upgrade_architecture_graph"
             }
           }
         ]
@@ -185,6 +185,7 @@
   },
   "active": "0d0f0af40fb680b4",
   "lastOpenFiles": [
-    "persistent_memory.md"
+    "persistent_memory.md",
+    "graphify-out/dna_upgrade_architecture_graph.md"
   ]
 }

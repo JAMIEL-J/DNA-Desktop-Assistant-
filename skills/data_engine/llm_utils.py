@@ -152,17 +152,55 @@ def _call_llm_for_code(prompt: str) -> str:
 
 def call_llm_for_json(prompt: str) -> dict:
     """Call LLM and parse response as JSON (for analyst module)."""
-    raw = _call_llm_for_code(prompt)  # reuses same LLM path
-    if not raw:
-        return {}
     try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        # Try to extract JSON from mixed text
-        match = re.search(r'\{.*\}', raw, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group())
-            except json.JSONDecodeError:
-                pass
+        if GOOGLE_API_KEY:
+            genai = importlib.import_module('google.genai')
+            client = genai.Client(api_key=GOOGLE_API_KEY)
+            response = client.models.generate_content(
+                model=CLOUD_LLM_MODEL,
+                contents=prompt,
+                config={'temperature': 0.0},
+            )
+            raw = (getattr(response, 'text', '') or '').strip()
+        else:
+            response = requests.post(
+                OLLAMA_URL,
+                json={
+                    'model': OLLAMA_MODEL,
+                    'messages': [{'role': 'user', 'content': prompt}],
+                    'stream': False,
+                    'options': {'temperature': 0.0},
+                },
+                timeout=OLLAMA_TIMEOUT,
+            )
+            response.raise_for_status()
+            raw = str(response.json().get('message', {}).get('content', '')).strip()
+
+        if not raw:
+            return {}
+
+        # Clean JSON markdown blocks
+        cleaned = raw
+        if cleaned.startswith('```'):
+            lines = cleaned.split('\n')
+            if lines[0].strip().startswith('```'):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == '```':
+                lines = lines[:-1]
+            cleaned = '\n'.join(lines).strip()
+
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            # Try to extract JSON from mixed text
+            match = re.search(r'(\{.*\})', cleaned, re.DOTALL)
+            if match:
+                try:
+                    return json.loads(match.group(1))
+                except json.JSONDecodeError:
+                    pass
+            return {}
+    except Exception as e:
+        logger.error('call_llm_for_json failed: %s', e)
         return {}
+

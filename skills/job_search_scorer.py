@@ -8,17 +8,26 @@ logger = logging.getLogger('dna.skill.job_search_scorer')
 class HybridScorer:
     def __init__(self):
         # Keyword matrices with word boundaries to prevent false positives
+        # Focused on analyst roles only (entry-level)
         self.keyword_map = {
             "High": [
-                r"\bdata analyst\b", r"\bresearch analyst\b", r"\bai engineer\b",
-                r"\bartificial intelligence engineer\b", r"\bml engineer\b"
+                r"\bdata analyst\b", r"\bresearch analyst\b", r"\bbusiness analyst\b",
+                r"\bjunior data analyst\b", r"\bjunior analyst\b",
+                r"\bBI analyst\b", r"\bbusiness intelligence analyst\b",
             ],
             "Medium": [
                 r"\bdata\b", r"\banalyst\b", r"\bfresher\b", r"\bentry level\b",
-                r"\bjunior\b", r"\bscience\b", r"\bscientist\b"
+                r"\bjunior\b", r"\bintern\b", r"\btrainee\b",
             ],
             "Low": [] # Default tier
         }
+        # Seniority keywords — any title matching these is forced to "Low"
+        self.seniority_blocklist = [
+            r"\bsenior\b", r"\bsr\.\b", r"\bsr\s", r"\blead\b", r"\bprincipal\b",
+            r"\bstaff\b", r"\bhead\b", r"\bdirector\b", r"\bmanager\b",
+            r"\bvp\b", r"\bchief\b", r"\barchitect\b", r"\bfounding\b",
+        ]
+        self.seniority_pattern = re.compile("|".join(self.seniority_blocklist), re.IGNORECASE)
         # Compile regex for efficiency
         self.patterns = {
             tier: re.compile("|".join(pats), re.IGNORECASE)
@@ -34,6 +43,9 @@ class HybridScorer:
         for job in jobs:
             title = job.get("title", "").lower()
             if not title:
+                tier = "Low"
+            elif self.seniority_pattern.search(title):
+                # Force senior/lead/principal/etc roles to Low
                 tier = "Low"
             elif self.patterns["High"].search(title):
                 tier = "High"
@@ -139,12 +151,17 @@ class HybridScorer:
                 else:
                     archetype = "N/A"
 
+                # Parse Legitimacy
+                legitimacy_match = re.search(r'Legitimacy: ([^.\n]*)', report)
+                legitimacy = legitimacy_match.group(1).strip() if legitimacy_match else "N/A"
+
                 # Parse Insight (the "Full Report" part)
                 insight_match = re.search(r'Full Report:\n([\s\S]*)', report)
 
                 job_copy = job.copy()
                 job_copy["llm_score"] = score_match.group(1) if score_match else "N/A"
                 job_copy["llm_archetype"] = archetype
+                job_copy["llm_legitimacy"] = legitimacy
                 job_copy["llm_insight"] = insight_match.group(1).strip() if insight_match else "N/A"
 
                 results.append(job_copy)

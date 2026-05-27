@@ -2,6 +2,7 @@
 import io
 import json
 import logging
+import re
 import time
 import wave
 from pathlib import Path
@@ -10,6 +11,7 @@ import threading
 
 # 2. third-party
 import numpy as np
+# pyrefly: ignore [missing-import]
 import sounddevice as sd
 
 # 3. internal
@@ -94,6 +96,7 @@ def _get_synthesizer():
                 logger.info('Loading Piper TTS model: %s', PIPER_VOICE)
                 start = time.time()
         
+                # pyrefly: ignore [missing-import]
                 from piper import PiperVoice
                 _synthesizer = PiperVoice.load(str(PIPER_MODEL_PATH))
         
@@ -123,6 +126,42 @@ def _synthesize_to_float32(voice, text: str):
     return audio_float, tts_sample_rate
 
 
+def clean_text_for_tts(text: str) -> str:
+    """Strip out markdown formatting, emoji, and especially code blocks (e.g. ```sql ... ```)
+    so that the TTS engine only speaks natural language sentences."""
+    if not text:
+        return ""
+    
+    # 1. Strip out code blocks (both ``` and `)
+    text = re.sub(r'```[a-zA-Z0-9]*\n[\s\S]*?\n```', '', text)
+    text = re.sub(r'```[\s\S]*?```', '', text)
+    text = re.sub(r'`[^`\n]+`', '', text)
+    
+    # 2. Strip out specific headers/labels that shouldn't be read
+    text = re.sub(r'\*\*📊 Database Queries Run:\*\*', '', text, flags=re.I)
+    text = re.sub(r'\*\*💡 Business Analysis:\*\*', '', text, flags=re.I)
+    text = re.sub(r'📊|💡|🚨|⏱️|💸|💳|⏳|🛠️|✅|❌', '', text)
+    
+    # 3. Strip bold/italic markdown characters
+    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
+    text = re.sub(r'\*([^*]+)\*', r'\1', text)
+    text = re.sub(r'_([^_]+)_', r'\1', text)
+    
+    # 4. Clean up Markdown headers like ###, ##, #
+    text = re.sub(r'^#+\s+', '', text, flags=re.M)
+    
+    # 5. Clean up multiple spaces and empty lines
+    lines = []
+    for line in text.splitlines():
+        line_clean = line.strip()
+        if line_clean:
+            lines.append(line_clean)
+            
+    cleaned = " ".join(lines)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    return cleaned
+
+
 def speak(text: str) -> str:
     """Convert text to speech and play it through the speakers using streaming.
 
@@ -133,23 +172,25 @@ def speak(text: str) -> str:
         Confirmation message or error description.
     """
     try:
-        if not text or not text.strip():
-            return 'Nothing to say.'
+        cleaned_text = clean_text_for_tts(text)
+        if not cleaned_text or not cleaned_text.strip():
+            return 'Nothing to say after cleaning.'
 
         _tts_lock.set()
         session_update('is_speaking', True)
         voice = _get_synthesizer()
         tts_sample_rate = voice.config.sample_rate
 
-        logger.info('Speaking (streaming): "%s"', text)
+        logger.info('Speaking (streaming): "%s"', cleaned_text)
         
         # Stream chunks directly to audio output as they form
         with sd.OutputStream(samplerate=tts_sample_rate, channels=1, dtype='int16') as stream:
-            for chunk in voice.synthesize(text):
+            for chunk in voice.synthesize(cleaned_text):
                 audio_int16 = np.frombuffer(chunk.audio_int16_bytes, dtype=np.int16)
                 stream.write(audio_int16)
 
-        return f'Said: {text}'
+        return f'Said: {cleaned_text}'
+
 
     except Exception as e:
         logger.error('TTS speak failed: %s', e)

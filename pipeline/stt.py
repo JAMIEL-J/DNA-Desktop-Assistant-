@@ -312,7 +312,7 @@ def _transcribe_groq(audio_data: np.ndarray) -> str:
             data={
                 "model": "whisper-large-v3-turbo",
                 "language": "en",
-                "prompt": WHISPER_PROMPT[:1000],
+                "prompt": WHISPER_PROMPT[:896],
                 "temperature": "0"
             },
             timeout=10

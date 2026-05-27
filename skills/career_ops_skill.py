@@ -11,6 +11,8 @@ import logging
 import re
 from pathlib import Path
 from typing import Any, Optional
+import urllib.request
+import html as html_lib
 
 from config import (
     GOOGLE_API_KEY,
@@ -20,6 +22,33 @@ from config import (
 )
 
 logger = logging.getLogger('dna.skill.career_ops')
+
+def _fetch_url_text(url: str) -> str:
+    """Fetches a URL and returns cleaned text content suitable for LLM analysis."""
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            html = response.read().decode('utf-8', errors='replace')
+        
+        # Strip script and style tags
+        html = re.sub(r'<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>', '', html, flags=re.IGNORECASE)
+        html = re.sub(r'<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>', '', html, flags=re.IGNORECASE)
+        # Convert structural tags to newlines
+        html = re.sub(r'</?(?:p|div|br|h1|h2|h3|h4|h5|h6|li|tr)[^>]*>', '\n', html, flags=re.IGNORECASE)
+        # Strip all HTML tags
+        text = re.sub(r'<[^>]+>', ' ', html)
+        # Decode HTML entities
+        text = html_lib.unescape(text)
+        # Normalize whitespace
+        text = re.sub(r'[ \t]+', ' ', text)
+        text = re.sub(r'\n\s*\n+', '\n\n', text)
+        return text.strip()
+    except Exception as e:
+        logger.error(f"Failed to fetch job description from URL {url}: {e}")
+        return ""
 
 def _run_node_script(script_name: str, args: list[str], env_vars: Optional[dict] = None) -> str:
     """Utility to run a Node.js script from the Career-Ops directory."""
@@ -61,6 +90,16 @@ def career_ops_evaluate(jd_text: str) -> str:
     Evaluate a job description using the Career-Ops A-F scoring matrix.
     Returns the full evaluation report and a summary of the score.
     """
+    # If the input is a URL, fetch the actual text first
+    if jd_text.strip().startswith(("http://", "https://")):
+        url = jd_text.strip()
+        logger.info(f"Fetching job description from URL: {url}")
+        fetched_text = _fetch_url_text(url)
+        if fetched_text:
+            jd_text = f"Source URL: {url}\n\n{fetched_text}"
+        else:
+            logger.warning(f"Could not retrieve content from {url}, falling back to raw URL string.")
+
     # Use gemini-eval.mjs for the evaluation
     # we pass the JD text as a positional argument
     output = _run_node_script('gemini-eval.mjs', [jd_text])
@@ -68,13 +107,31 @@ def career_ops_evaluate(jd_text: str) -> str:
     if "Error" in output:
         return output
 
-    # Extract summary for a concise voice response
+    # Robust parsing of score, archetype, and legitimacy from the SCORE_SUMMARY block
+    summary_match = re.search(
+        r'---SCORE_SUMMARY---\s*COMPANY:\s*(.*?)\s*ROLE:\s*(.*?)\s*SCORE:\s*([\d\.]+)\s*ARCHETYPE:\s*(.*?)\s*LEGITIMACY:\s*(.*?)\s*---END_SUMMARY---',
+        output,
+        re.DOTALL | re.IGNORECASE
+    )
+    if summary_match:
+        company, role, score, archetype, legitimacy = summary_match.groups()
+        # Clean the output to remove the summary block and any raw debug/loader lines
+        clean_report = re.sub(r'---SCORE_SUMMARY---[\s\S]*?---END_SUMMARY---', '', output).strip()
+        clean_report = re.sub(r'📂\s*Loading context files.*?(?:═{6,}[^\n]*\n){2}', '', clean_report, flags=re.DOTALL).strip()
+        clean_report = re.sub(r'<think>[\s\S]*?</think>', '', clean_report).strip()
+        
+        return (f"Evaluation complete. Score: {score}/5. "
+                f"Archetype: {archetype.strip()}. Legitimacy: {legitimacy.strip()}.\n\n"
+                f"Full Report:\n{clean_report}")
+
+    # Fallback to the old regex
     summary_match = re.search(r'Score: ([\d\.]+)/5\s*\|\s*Archetype: ([^|]+)\s*\|\s*Legitimacy: (.+)', output)
     if summary_match:
         score, archetype, legitimacy = summary_match.groups()
+        clean_report = re.sub(r'📂\s*Loading context files.*?(?:═{6,}[^\n]*\n){2}', '', output, flags=re.DOTALL).strip()
         return (f"Evaluation complete. Score: {score}/5. "
                 f"Archetype: {archetype.strip()}. Legitimacy: {legitimacy.strip()}.\n\n"
-                f"Full Report:\n{output}")
+                f"Full Report:\n{clean_report}")
 
     return output
 

@@ -34,26 +34,43 @@ logger = logging.getLogger('dna.skill.job_search')
 # ── Role Configuration ────────────────────────────────────────────────────────
 
 ROLE_QUERIES = {
-    "data analyst":     ["data analyst fresher", "data analyst entry level",
-                         "junior data analyst", "research analyst fresher"],
-    "data scientist":   ["data scientist fresher", "data science fresher",
-                         "junior data scientist", "ml engineer fresher"],
-    "business analyst": ["business analyst fresher", "junior business analyst",
-                         "BA fresher"],
-    "data engineer":    ["data engineer fresher", "junior data engineer",
-                         "ETL developer fresher"],
-    "ml engineer":      ["machine learning engineer fresher", "ml engineer fresher",
-                         "AI engineer fresher"],
-    "all":              ["data analyst fresher", "research analyst fresher", "ai engineer fresher"],
+    "data analyst":     ["data analyst fresher India", "data analyst entry level India",
+                         "junior data analyst India", "data analyst 0-1 years India"],
+    "business analyst": ["business analyst fresher India", "junior business analyst India",
+                         "BA fresher India", "business analyst entry level India"],
+    "research analyst": ["research analyst fresher India", "junior research analyst India",
+                         "research analyst entry level India"],
+    "all":              ["data analyst fresher India", "junior data analyst India",
+                         "business analyst fresher India", "research analyst fresher India"],
 }
 
-SOUTH_INDIA_CITIES = [
+# Seniority blocklist — titles containing these are filtered out
+SENIORITY_BLOCKLIST = [
+    "senior", "sr.", "sr ", "lead", "principal", "staff", "head of",
+    "director", "manager", "vp ", "vice president", "chief",
+    "architect", "distinguished", "founding", "mid-level",
+]
+
+# All major Indian cities and states for location filtering
+INDIA_CITIES = [
+    # South India
     "chennai", "bangalore", "bengaluru", "hyderabad", "coimbatore",
     "kochi", "cochin", "madurai", "mysore", "mysuru", "trichy",
     "tiruchirappalli", "vizag", "visakhapatnam", "mangalore",
     "hubli", "salem", "vellore", "pondicherry", "puducherry",
-    "tirunelveli", "erode", "tiruppur", "south india", "tamil nadu",
-    "karnataka", "kerala", "andhra", "telangana"
+    "tirunelveli", "erode", "tiruppur",
+    # North / Central / West India
+    "mumbai", "delhi", "new delhi", "ncr", "noida", "gurgaon",
+    "gurugram", "pune", "ahmedabad", "jaipur", "lucknow",
+    "kolkata", "chandigarh", "indore", "bhopal", "nagpur",
+    "surat", "vadodara", "patna", "ranchi", "guwahati",
+    "thiruvananthapuram", "trivandrum", "bhubaneswar",
+    # State / region names
+    "india", "tamil nadu", "karnataka", "kerala", "andhra",
+    "telangana", "maharashtra", "rajasthan", "uttar pradesh",
+    "west bengal", "gujarat", "haryana", "punjab",
+    # Generic markers
+    "remote", "pan india", "work from home", "wfh",
 ]
 
 # ── Session State ─────────────────────────────────────────────────────────────
@@ -70,11 +87,19 @@ _search_session = {
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _is_south_india(location: str) -> bool:
+def _is_india(location: str) -> bool:
+    """Returns True if the location is anywhere in India or unspecified."""
     if not location:
         return True
     loc = location.lower()
-    return any(city in loc for city in SOUTH_INDIA_CITIES)
+    return any(city in loc for city in INDIA_CITIES)
+
+def _is_entry_level(title: str) -> bool:
+    """Returns False if title contains seniority keywords (senior, lead, etc)."""
+    if not title:
+        return True
+    t = title.lower()
+    return not any(kw in t for kw in SENIORITY_BLOCKLIST)
 
 def _is_recent(published: str, max_days: int = 14) -> bool:
     try:
@@ -110,7 +135,7 @@ def _fetch_indeed(query: str, days: int = 14) -> list:
     results = []
     url = (f"https://in.indeed.com/rss?"
            f"q={query.replace(' ', '+')}"
-           f"&l=South+India&sort=date&fromage={days}")
+           f"&l=India&sort=date&fromage={days}")
     try:
         feed = feedparser.parse(url)
         for entry in feed.entries:
@@ -122,7 +147,9 @@ def _fetch_indeed(query: str, days: int = 14) -> list:
 
             if not title or not link:
                 continue
-            if not _is_south_india(location):
+            if not _is_india(location):
+                continue
+            if not _is_entry_level(title):
                 continue
             if not _is_recent(published, days):
                 continue
@@ -150,12 +177,14 @@ def _fetch_internshala(role: str) -> list:
     
     # Use proper Internshala category slugs
     if role == "data" or role == "all":
-        role_slug = "data-science,data-analytics"
+        role_slug = "data-analytics"
+    elif role == "business analyst":
+        role_slug = "business-analytics"
     else:
         role_slug = role.lower().replace(" ", "-")
         
-    # Internshala doesn't support 'south-india' region, so we must query the major cities explicitly.
-    cities = ["bangalore", "chennai", "hyderabad"]
+    # Query major Indian cities
+    cities = ["bangalore", "chennai", "hyderabad", "mumbai", "delhi", "pune", "kolkata"]
     
     for city in cities:
         url = f"https://internshala.com/fresher-jobs/{role_slug}-jobs-in-{city}/"
@@ -242,7 +271,7 @@ def _run_search(role: str = "all") -> list:
                         all_jobs.append({
                             "title": title,
                             "company": company,
-                            "location": f"Remote ({portal})", # Career-Ops portal
+                            "location": f"Remote / {portal}",
                             "link": url,
                             "source": "Company Portal",
                             "published": first_seen
@@ -251,8 +280,11 @@ def _run_search(role: str = "all") -> list:
             logger.error("Failed to parse Career-Ops scan history: %s", e)
 
     # Internshala scrape
+    # Internshala: fetch analyst roles
     internshala_role = role if role != "all" else "data"
     all_jobs += _fetch_internshala(internshala_role)
+    if role == "all":
+        all_jobs += _fetch_internshala("business analyst")
 
     # ── Hybrid Scoring Pipeline ──
     scorer = HybridScorer()
@@ -358,7 +390,7 @@ def enter_job_search_mode(role: str = "all") -> str:
     _search_session["current_index"] = 0
     _search_session["saved_jobs"]    = []
 
-    role_label = role.title() if role != "all" else "Data Analyst and Data Science"
+    role_label = role.title() if role != "all" else "Data Analyst and Business Analyst"
 
     jobs = _run_search(role)
     _search_session["results"]    = jobs
@@ -389,8 +421,8 @@ def enter_job_search_mode(role: str = "all") -> str:
         logger.error(f"Failed to generate dashboard: {e}")
         dashboard_msg = ""
 
-    result  = f"Entering high-fidelity job search mode (powered by Career-Ops). Searching for {role_label} fresher roles in South India. "
-    result += f"Found {len(jobs)} fresher openings. "
+    result  = f"Entering high-fidelity job search mode (powered by Career-Ops). Searching for {role_label} entry-level roles across India. "
+    result += f"Found {len(jobs)} entry-level openings. "
     result += _speak_jobs(jobs, 0, 5)
     result += f" Full list saved to {Path(csv_path).name} and{dashboard_msg}"
 
@@ -481,16 +513,16 @@ def search_role(role: str = "all") -> str:
 def open_job_portals() -> str:
     """Open all major job portals for manual browsing."""
     try:
-        webbrowser.open("https://internshala.com/fresher-jobs/data-science-data-analytics-jobs/")
+        webbrowser.open("https://internshala.com/fresher-jobs/data-analytics-jobs/")
         webbrowser.open(
             "https://in.indeed.com/q-data-analyst-fresher-jobs.html"
-            "?l=South+India&sort=date"
+            "?l=India&sort=date"
         )
         webbrowser.open(
-            "https://www.naukri.com/data-analyst-fresher-jobs-in-south-india"
+            "https://www.naukri.com/data-analyst-fresher-jobs"
         )
         return ("Opened Internshala, Indeed, and Naukri in your browser, "
-                "all filtered for fresher Data roles in South India.")
+                "all filtered for fresher Data Analyst roles across India.")
     except Exception as e:
         return f"Could not open job portals: {str(e)}"
 
@@ -522,8 +554,11 @@ def morning_job_check() -> str:
     """
     try:
         jobs = []
-        for query in ["data analyst fresher", "data scientist fresher"]:
-            jobs += _fetch_indeed(query=query, days=1)
+        for query in ["data analyst fresher", "business analyst fresher"]:
+            fetched = _fetch_indeed(query=query, days=1)
+            # Apply entry-level filter to morning check too
+            fetched = [j for j in fetched if _is_entry_level(j.get('title', ''))]
+            jobs += fetched
         jobs = list({j["link"]: j for j in jobs}.values())  # deduplicate
 
         if not jobs:
@@ -531,9 +566,9 @@ def morning_job_check() -> str:
 
         count = len(jobs)
         top = jobs[0]
-        loc = top["location"].split(",")[0].strip() if top["location"] else "South India"
-        return (f"By the way, {count} new Data Analyst and Data Science "
-                f"fresher job openings posted today in South India. "
+        loc = top["location"].split(",")[0].strip() if top["location"] else "India"
+        return (f"By the way, {count} new Data Analyst "
+                f"entry-level openings posted today in India. "
                 f"Latest one is {top['title']} at {top['company']}, {loc}. "
                 f"Say job search mode for the full list.")
 

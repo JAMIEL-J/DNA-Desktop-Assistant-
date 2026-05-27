@@ -21,9 +21,11 @@ class DataProfiler:
     def __init__(self):
         self.last_sample_df = None
         self._cached_excel_df = None  # Cache to avoid loading Excel twice
+        self.query_log = []
 
     def profile(self, path: str) -> dict:
         """Generate full statistical profile. Returns structured dict."""
+        self.query_log = []
         con = duckdb.connect()
         try:
             # Check if file is Excel
@@ -83,6 +85,17 @@ class DataProfiler:
                 'quality_score': quality_score,
                 'size_strategy': strategy,
             }
+
+            # Run target breakdowns if target column exists
+            target_col = self._find_target_column(schema)
+            if target_col:
+                logger.info('Detected target column for breakdowns: %s', target_col)
+                profile_data['target_breakdowns'] = self._run_target_breakdowns(
+                    con, table_ref, target_col, schema, row_count
+                )
+            else:
+                profile_data['target_breakdowns'] = None
+
             return profile_data
 
         except Exception as e:
@@ -254,3 +267,207 @@ class DataProfiler:
         # Basic linear penalty: 70% weight to nulls, 30% to duplicates
         score = 100.0 - (0.7 * avg_null_pct) - (0.3 * duplicate_pct)
         return float(max(0.0, min(100.0, score)))
+
+    def _find_target_column(self, schema: list) -> str | None:
+        """Find the binary target column from the schema, if any."""
+        common_targets = {
+            'churn', 'target', 'label', 'class', 'clicked', 'purchased', 'default', 
+            'survived', 'status', 'attrition', 'delay', 'delayed', 'late', 'refunded', 
+            'returned', 'cancelled', 'inactive', 'fraud', 'terminated', 'left', 
+            'churned', 'sold', 'converted', 'subscribed', 'opted_in', 'response', 
+            'responded', 'promoted', 'failed', 'failure', 'success', 'high_risk'
+        }
+        
+        # 1. Check 2-unique columns with name match first
+        for col in schema:
+            name_lower = col['name'].lower()
+            if col.get('uniques') == 2:
+                if any(t in name_lower for t in common_targets):
+                    return col['name']
+                    
+        # 2. Check any column with exact name match to target keywords
+        for col in schema:
+            name_lower = col['name'].lower()
+            if name_lower in common_targets:
+                return col['name']
+                
+        # 3. Fallback 1: Any column with exactly 2 unique values
+        for col in schema:
+            if col.get('uniques') == 2:
+                return col['name']
+                
+        # 4. Fallback 2: Any column with 3 unique values
+        for col in schema:
+            if col.get('uniques') == 3:
+                return col['name']
+                
+        # 5. Fallback 3: Return the last column in the schema
+        if schema:
+            return schema[-1]['name']
+            
+        return None
+
+    def _determine_positive_class(self, con, table_ref: str, target_col: str) -> str:
+        """Find the value representing the positive outcome (e.g. Yes, True, 1)."""
+        try:
+            q = f"SELECT DISTINCT \"{target_col}\" FROM {table_ref} WHERE \"{target_col}\" IS NOT NULL LIMIT 10"
+            self.query_log.append(("Determine positive class for target", q))
+            res = con.execute(q).fetchall()
+            values = [str(r[0]) for r in res]
+            
+            # Look for common positive values
+            positive_indicators = {'yes', 'true', '1', 'default', 'churned', 'attrition', 'survived', 'success', 'delay', 'delayed', 'high', 'above_average'}
+            for val in values:
+                if val.lower() in positive_indicators:
+                    return val
+            
+            # Fallback to the first value that is not 'no', 'false', '0', 'none', 'null', 'low'
+            negative_indicators = {'no', 'false', '0', 'none', 'null', 'low'}
+            for val in values:
+                if val.lower() not in negative_indicators:
+                    return val
+                    
+            # Absolute fallback
+            return values[0] if values else "Yes"
+        except Exception as e:
+            logger.error('Failed to determine positive class: %s', e)
+            return "Yes"
+
+    def _run_target_breakdowns(self, con, table_ref: str, target_col: str, schema: list, row_count: int) -> dict:
+        """Run DuckDB cross-tabulations and numerical cohort summaries against target."""
+        # Check target column uniqueness
+        target_uniques = 2
+        for col in schema:
+            if col['name'] == target_col:
+                target_uniques = col.get('uniques', 2)
+                break
+
+        active_table = table_ref
+        active_target = target_col
+
+        # If target column is not binary (uniques > 2), construct a virtual binarized view!
+        if target_uniques > 2:
+            is_numeric = False
+            for col in schema:
+                if col['name'] == target_col:
+                    col_type = col['type'].lower()
+                    is_numeric = any(t in col_type for t in ['int', 'double', 'float', 'decimal', 'real', 'numeric', 'bigint'])
+                    break
+
+            active_target = f"{target_col}_binarized"
+            if is_numeric:
+                try:
+                    mean_res = con.execute(f'SELECT AVG("{target_col}") FROM {table_ref}').fetchone()
+                    mean_val = mean_res[0] if mean_res and mean_res[0] is not None else 0.0
+                    q_view = f"""
+                        CREATE OR REPLACE TEMPORARY VIEW data_table_binarized AS 
+                        SELECT *, 
+                        CASE WHEN "{target_col}" >= {mean_val} THEN 'High' ELSE 'Low' END AS "{active_target}" 
+                        FROM {table_ref}
+                    """
+                    con.execute(q_view)
+                    active_table = "data_table_binarized"
+                    logger.info("Binarized numeric target %s around mean %s", target_col, mean_val)
+                except Exception as e:
+                    logger.error("Failed to binarize numeric target: %s", e)
+            else:
+                try:
+                    freq_res = con.execute(f'SELECT "{target_col}", COUNT(*) as c FROM {table_ref} GROUP BY "{target_col}" ORDER BY c DESC LIMIT 1').fetchone()
+                    most_freq = freq_res[0] if freq_res else 'Other'
+                    escaped_freq = str(most_freq).replace("'", "''")
+                    q_view = f"""
+                        CREATE OR REPLACE TEMPORARY VIEW data_table_binarized AS 
+                        SELECT *, 
+                        CASE WHEN "{target_col}" = '{escaped_freq}' THEN '{escaped_freq}' ELSE 'Other' END AS "{active_target}" 
+                        FROM {table_ref}
+                    """
+                    con.execute(q_view)
+                    active_table = "data_table_binarized"
+                    logger.info("Binarized categorical target %s using frequent value %s", target_col, most_freq)
+                except Exception as e:
+                    logger.error("Failed to binarize categorical target: %s", e)
+
+        breakdowns = {
+            'target_column': active_target,
+            'positive_class': None,
+            'baseline_rate': 0.0,
+            'categorical': {},
+            'numeric': {}
+        }
+        
+        try:
+            # 1. Determine positive class
+            pos_val = self._determine_positive_class(con, active_table, active_target)
+            breakdowns['positive_class'] = pos_val
+            
+            # 2. Baseline target count and percentage
+            escaped_pos_val = pos_val.replace("'", "''")
+            q_baseline = f"SELECT COUNT(*), SUM(CASE WHEN \"{active_target}\" = '{escaped_pos_val}' THEN 1 ELSE 0 END) FROM {active_table}"
+            self.query_log.append(("Calculate baseline target event rate", q_baseline))
+            baseline_res = con.execute(q_baseline).fetchone()
+            
+            total_rows = baseline_res[0] if baseline_res else row_count
+            total_events = baseline_res[1] if baseline_res else 0
+            if total_rows > 0:
+                breakdowns['baseline_rate'] = (total_events / total_rows) * 100.0
+            
+            # 3. Categorical cross-tabulations
+            for col in schema:
+                col_name = col['name']
+                if col_name == target_col or col_name == active_target:
+                    continue
+                
+                # Only check columns with low cardinality (between 2 and 12 unique values)
+                if 2 <= col['uniques'] <= 12:
+                    try:
+                        query = f"""
+                            SELECT 
+                                "{col_name}" AS category,
+                                COUNT(*) AS total_count,
+                                SUM(CASE WHEN "{active_target}" = '{escaped_pos_val}' THEN 1 ELSE 0 END) AS event_count,
+                                (AVG(CASE WHEN "{active_target}" = '{escaped_pos_val}' THEN 1.0 ELSE 0.0 END) * 100) AS event_pct
+                            FROM {active_table}
+                            GROUP BY "{col_name}"
+                            ORDER BY total_count DESC
+                        """
+                        clean_q = " ".join([line.strip() for line in query.strip().splitlines()])
+                        self.query_log.append((f"Cross-tabulation for category '{col_name}' vs target '{active_target}'", clean_q))
+                        res_df = con.execute(query).fetchdf()
+                        
+                        # Add percentage of total events and percentage of total dataset
+                        res_df['pct_of_dataset'] = (res_df['total_count'] / total_rows * 100.0) if total_rows > 0 else 0.0
+                        res_df['pct_of_total_events'] = (res_df['event_count'] / total_events * 100.0) if total_events > 0 else 0.0
+                        
+                        breakdowns['categorical'][col_name] = res_df.to_dict(orient='records')
+                    except Exception as e:
+                        logger.warning('Failed cross-tab for column %s: %s', col_name, e)
+            
+            # 4. Numeric cohort means
+            for col in schema:
+                col_name = col['name']
+                if col_name == target_col or col_name == active_target:
+                    continue
+                # If column type is numeric (e.g. contains int, double, float, decimal)
+                col_type = col['type'].lower()
+                is_num = any(t in col_type for t in ['int', 'double', 'float', 'decimal', 'real', 'numeric'])
+                if is_num:
+                    try:
+                        query = f"""
+                            SELECT 
+                                "{active_target}" AS target_status,
+                                AVG("{col_name}") AS mean_val,
+                                COUNT("{col_name}") AS non_null_count
+                            FROM {active_table}
+                            GROUP BY "{active_target}"
+                        """
+                        clean_q = " ".join([line.strip() for line in query.strip().splitlines()])
+                        self.query_log.append((f"Cohort averages for numeric '{col_name}' vs target '{active_target}'", clean_q))
+                        res_df = con.execute(query).fetchdf()
+                        breakdowns['numeric'][col_name] = res_df.to_dict(orient='records')
+                    except Exception as e:
+                        logger.warning('Failed numeric group for column %s: %s', col_name, e)
+                        
+        except Exception as e:
+            logger.error('Error running target breakdowns: %s', e)
+            
+        return breakdowns
