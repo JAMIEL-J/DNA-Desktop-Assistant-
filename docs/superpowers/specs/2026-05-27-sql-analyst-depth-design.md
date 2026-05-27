@@ -76,7 +76,10 @@ When a general summary is requested via voice:
 ### D. Execution Transparency & Code Log Presentation
 To keep the user engaged and keep the process trackable:
 1. **Log Output**: When the engine runs a SQL query or code block, the text output sent to the user must prepend the exact executable DuckDB SQL query or Python code executed.
-2. **Formatting**:
+2. **Spoken Voice Cues (Verbal Engagement)**:
+   * When the analysis begins, the assistant must immediately output a status update spoken by the TTS engine (e.g., *"Running the SQL code for the dataset, sir. Analyzing the KPIs and checking for key correlations..."*).
+   * This provides instant verbal confirmation of what analytical steps the engine is taking before speaking the final insights.
+3. **Formatting**:
    ```markdown
    **📊 Database Queries Run:**
    ```sql
@@ -87,7 +90,8 @@ To keep the user engaged and keep the process trackable:
    **💡 Business Analysis:**
    [Senior-Level Natural Language Summary of results]
    ```
-3. This ensures the user can copy the exact SQL to verify the numbers or use it in their own work, keeping the process highly visible.
+4. This ensures the user can copy the exact SQL to verify the numbers or use it in their own work, keeping the process highly visible.
+
 
 ---
 
