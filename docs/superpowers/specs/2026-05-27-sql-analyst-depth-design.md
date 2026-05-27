@@ -79,7 +79,10 @@ To keep the user engaged and keep the process trackable:
 2. **Spoken Voice Cues (Verbal Engagement)**:
    * When the analysis begins, the assistant must immediately output a status update spoken by the TTS engine (e.g., *"Running the SQL code for the dataset, sir. Analyzing the KPIs and checking for key correlations..."*).
    * This provides instant verbal confirmation of what analytical steps the engine is taking before speaking the final insights.
-3. **Formatting**:
+3. **TTS Text Cleaning (Only Spoken English Insights)**:
+   * To prevent the TTS engine from attempting to speak raw SQL code, formatting asterisks, or markdown characters, a regex cleaning function (`clean_text_for_tts`) will be added to `pipeline/tts.py`.
+   * This function will strip out all markdown code blocks (e.g. ````sql ... ````), headers (`#`, `##`), bold/italic indicators (`**`), and emojis, leaving only the clean English insights for the TTS engine to synthesize.
+4. **Formatting**:
    ```markdown
    **📊 Database Queries Run:**
    ```sql
@@ -90,7 +93,8 @@ To keep the user engaged and keep the process trackable:
    **💡 Business Analysis:**
    [Senior-Level Natural Language Summary of results]
    ```
-4. This ensures the user can copy the exact SQL to verify the numbers or use it in their own work, keeping the process highly visible.
+5. This ensures the user can copy the exact SQL to verify the numbers or use it in their own work, keeping the process highly visible.
+
 
 
 ---
