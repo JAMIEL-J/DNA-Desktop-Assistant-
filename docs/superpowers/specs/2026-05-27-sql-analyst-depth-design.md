@@ -73,10 +73,29 @@ When a general summary is requested via voice:
 
 ---
 
+### D. Execution Transparency & Code Log Presentation
+To keep the user engaged and keep the process trackable:
+1. **Log Output**: When the engine runs a SQL query or code block, the text output sent to the user must prepend the exact executable DuckDB SQL query or Python code executed.
+2. **Formatting**:
+   ```markdown
+   **📊 Database Queries Run:**
+   ```sql
+   -- [Description of query, e.g. Cross-tabulating Churn and PaymentMethod]
+   SELECT "PaymentMethod", COUNT(*), AVG(CASE WHEN "Churn" = 'Yes' THEN 1.0 ELSE 0.0 END) FROM data_table GROUP BY "PaymentMethod";
+   ```
+   
+   **💡 Business Analysis:**
+   [Senior-Level Natural Language Summary of results]
+   ```
+3. This ensures the user can copy the exact SQL to verify the numbers or use it in their own work, keeping the process highly visible.
+
+---
+
 ## 4. Implementation Steps
 
 1. **Step 1**: Update `PatternDetector` in `detector.py` to identify the positive class value for detected binary targets.
 2. **Step 2**: Update `DataProfiler` in `profiler.py` to run target breakdown queries in DuckDB and store the results in the profile dictionary under `target_breakdowns`.
 3. **Step 3**: Update `DataAnalyst` in `analyst.py` to format `target_breakdowns` into the LLM prompt and enforce senior-level reporting rules.
-4. **Step 4**: Integrate the analyst executive summary into `run_analysis` for `VOICE_ONLY` general summaries in `__init__.py`.
+4. **Step 4**: Integrate execution code logging and analyst summaries into `run_analysis` and `QueryEngine` in `__init__.py` and `query_engine.py`.
 5. **Step 5**: Run tests to verify that both the console log reports and the voice responses are rich, volume-informed, and highly professional.
+
