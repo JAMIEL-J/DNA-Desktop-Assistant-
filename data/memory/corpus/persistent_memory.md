@@ -6,7 +6,7 @@
 - **Location:** Pudukkottai, India
 - **Contact:** +91 78453 01134 | jahirjamiel@gmail.com
 - **GitHub:** [github.com/JAMIEL-J](https://github.com/JAMIEL-J)
-- **LinkedIn:** [linkedin.com/in/jamiel-j](https://linkedin.com/in/jamiel-j)
+- **LinkedIn:** [linkedin.com/in/jamiel-j-856ab9329](https://www.linkedin.com/in/jamiel-j-856ab9329/)
 - **Preferred Coding Style:** Direct, casual Tanglish/English, concise scannable bullet points, no fluff.
 - **Coding Environment:** Uses VS Code, Git, and Google's agentic IDE (referred to as "antigravity").
 

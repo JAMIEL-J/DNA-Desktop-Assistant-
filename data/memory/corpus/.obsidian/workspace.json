@@ -19,7 +19,52 @@
               },
               "icon": "lucide-file",
               "title": "dna_upgrade_architecture_graph"
-            }
+            },
+            "group": "951f3f9e97a6a069"
+          }
+        ]
+      },
+      {
+        "id": "de08878f4dd17008",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "16bc46a8451b428d",
+            "type": "leaf",
+            "state": {
+              "type": "localgraph",
+              "state": {
+                "file": "graphify-out/dna_upgrade_architecture_graph.md",
+                "options": {
+                  "collapse-filter": true,
+                  "search": "",
+                  "localJumps": 1,
+                  "localBacklinks": true,
+                  "localForelinks": true,
+                  "localInterlinks": false,
+                  "showTags": false,
+                  "showAttachments": false,
+                  "hideUnresolved": false,
+                  "collapse-color-groups": true,
+                  "colorGroups": [],
+                  "collapse-display": true,
+                  "showArrow": false,
+                  "textFadeMultiplier": 0,
+                  "nodeSizeMultiplier": 1,
+                  "lineSizeMultiplier": 1,
+                  "collapse-forces": true,
+                  "centerStrength": 0.518713248970312,
+                  "repelStrength": 10,
+                  "linkStrength": 1,
+                  "linkDistance": 250,
+                  "scale": 1,
+                  "close": true
+                }
+              },
+              "icon": "lucide-git-fork",
+              "title": "Graph of dna_upgrade_architecture_graph"
+            },
+            "group": "951f3f9e97a6a069"
           }
         ]
       }
@@ -185,7 +230,7 @@
   },
   "active": "0d0f0af40fb680b4",
   "lastOpenFiles": [
-    "persistent_memory.md",
+    "graphify-out/persistent_memory.md",
     "graphify-out/dna_upgrade_architecture_graph.md"
   ]
 }

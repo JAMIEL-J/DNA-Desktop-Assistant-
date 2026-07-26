@@ -15,9 +15,10 @@ class OutputRouter:
     """Classifies user intent into voice, deep report, or export modes."""
 
     DEEP_KEYWORDS = [
-        'analyze', 'analysis', 'profile', 'investigate', 'why', 'patterns',
-        'report', 'dashboard', 'deep dive', 'explore', 'summarize', 'overview',
-        'what is happening', 'find out', 'breakdown'
+        'deep analysis', 'deep analyze', 'deep analyse', 'deep profile',
+        'dashboard', 'create dashboard', 'generate dashboard', 'build dashboard',
+        'full report', 'deep report', 'generate report', 'build report', 'full analysis',
+        'deep dive', 'full investigation', 'executive report'
     ]
     EXPORT_KEYWORDS = [
         'export', 'save', 'download', 'to csv', 'to excel'
