@@ -150,16 +150,27 @@ def _call_llm_for_code(prompt: str) -> str:
         return ''
 
 
-def call_llm_for_json(prompt: str) -> dict:
-    """Call LLM and parse response as JSON (for analyst module)."""
+def call_llm_for_json(prompt: str, schema: dict | None = None) -> dict:
+    """Call LLM and parse response as JSON (for analyst module).
+
+    schema: optional Gemini-format JSON schema dict. When provided on the
+    cloud path, the API enforces the shape server-side instead of relying
+    on prompt instructions alone. Ignored on the Ollama fallback beyond
+    forcing generic JSON mode.
+    """
     try:
         if GOOGLE_API_KEY:
             genai = importlib.import_module('google.genai')
             client = genai.Client(api_key=GOOGLE_API_KEY)
+
+            config = {'temperature': 0.0, 'response_mime_type': 'application/json'}
+            if schema:
+                config['response_schema'] = schema
+
             response = client.models.generate_content(
                 model=CLOUD_LLM_MODEL,
                 contents=prompt,
-                config={'temperature': 0.0},
+                config=config,
             )
             raw = (getattr(response, 'text', '') or '').strip()
         else:
@@ -169,6 +180,7 @@ def call_llm_for_json(prompt: str) -> dict:
                     'model': OLLAMA_MODEL,
                     'messages': [{'role': 'user', 'content': prompt}],
                     'stream': False,
+                    'format': 'json',
                     'options': {'temperature': 0.0},
                 },
                 timeout=OLLAMA_TIMEOUT,
@@ -179,7 +191,6 @@ def call_llm_for_json(prompt: str) -> dict:
         if not raw:
             return {}
 
-        # Clean JSON markdown blocks
         cleaned = raw
         if cleaned.startswith('```'):
             lines = cleaned.split('\n')
@@ -192,7 +203,6 @@ def call_llm_for_json(prompt: str) -> dict:
         try:
             return json.loads(cleaned)
         except json.JSONDecodeError:
-            # Try to extract JSON from mixed text
             match = re.search(r'(\{.*\})', cleaned, re.DOTALL)
             if match:
                 try:
@@ -203,4 +213,3 @@ def call_llm_for_json(prompt: str) -> dict:
     except Exception as e:
         logger.error('call_llm_for_json failed: %s', e)
         return {}
-

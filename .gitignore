@@ -1,20 +1,52 @@
-# Python virtual environment
-.venv/
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Local Databases
+# Python Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+
+# Documentation & Spec Folders
+docs/
+docs/superpowers/specs/
+specs/
+
+# Scratch & Temporary Test Files (Outside of standard test folder)
+scratch/
+scratch_*.py
+test_*.py
+!tests/
+
+# Generated Data Outputs, Analysis Reports & Persistent DBs
+data/db/
+data/analysis_output/
+data/superstore_e2e_output/
 data/*.db
 data/*.duckdb
+*.db
+*.duckdb
+*.sqlite
+*.sqlite3
 
-# Logs
-logs/*.log
+# Artifacts & Local Agent Metadata
+artifacts/
+.agent/
+.gemini/
 
-# Environment Files
+# Environment Variables & Configuration Secrets
 .env
 .env.local
+.env.*.local
 
-# Antigravity Agent Configuration
-.agent/
+# Logs
+logs/
+*.log
 
+# IDE & OS Files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

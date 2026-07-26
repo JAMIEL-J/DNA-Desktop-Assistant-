@@ -34,7 +34,7 @@ class PatternDetector:
         return findings
 
     def _detect_outliers(self, df_sample: pd.DataFrame) -> list[dict]:
-        """IQR method (1.5x fence) to detect numeric outliers."""
+        """IQR method (1.5x fence) to detect numeric outliers with volume impact."""
         findings = []
         numeric_cols = df_sample.select_dtypes(include=[np.number]).columns
         for col in numeric_cols:
@@ -46,19 +46,31 @@ class PatternDetector:
             iqr = q3 - q1
             if iqr == 0:
                 continue
-            lower_fence = q1 - 1.5 * iqr
-            upper_fence = q3 + 1.5 * iqr
+            lower_fence = float(q1 - 1.5 * iqr)
+            upper_fence = float(q3 + 1.5 * iqr)
             outliers = series[(series < lower_fence) | (series > upper_fence)]
             if len(outliers) > 0:
-                pct = len(outliers) / len(series)
-                severity = 'MEDIUM' if pct > 0.05 else 'LOW'
+                pct = len(outliers) / len(series) * 100.0
+                outlier_sum = float(outliers.sum())
+                total_sum = float(series.sum())
+                impact_pct = (outlier_sum / total_sum * 100.0) if total_sum != 0 else 0.0
+                extremes = [round(float(x), 2) for x in sorted(outliers.to_list(), key=lambda x: abs(x), reverse=True)[:5]]
+                
+                severity = 'HIGH' if (pct > 5.0 or abs(impact_pct) > 20.0) else 'MEDIUM' if pct > 2.0 else 'LOW'
                 findings.append({
                     'type': 'outlier',
                     'column': col,
-                    'detail': f"{col} has {len(outliers)} outliers (values outside [{lower_fence:.1f}, {upper_fence:.1f}])",
+                    'outlier_count': len(outliers),
+                    'outlier_pct': round(pct, 1),
+                    'lower_fence': round(lower_fence, 2),
+                    'upper_fence': round(upper_fence, 2),
+                    'outlier_impact_pct': round(impact_pct, 1),
+                    'top_extremes': extremes,
+                    'detail': f"{col} has {len(outliers)} outliers ({pct:.1f}% of rows, bounds: [{lower_fence:.1f}, {upper_fence:.1f}]). Outliers contribute {impact_pct:.1f}% of total {col} volume. Extreme values: {extremes[:3]}",
                     'severity': severity
                 })
         return findings
+
 
     def _detect_target_column(self, profile: dict) -> list[dict]:
         """Detect binary target columns or columns likely to be the classification label."""

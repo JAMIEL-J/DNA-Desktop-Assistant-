@@ -48,8 +48,8 @@ def _resolve_downloads_dir() -> Path:
 
 # Pipeline Settings
 LOG_PATH = BASE_DIR / os.getenv('LOG_PATH', 'logs/dna.log')
-DB_PATH = BASE_DIR / os.getenv('DB_PATH', 'data/dna_memory.db')
-DUCK_PATH = BASE_DIR / os.getenv('DUCK_PATH', 'data/dna_duck.db')
+DB_PATH = BASE_DIR / os.getenv('DB_PATH', 'data/db/dna_memory.db')
+DUCK_PATH = BASE_DIR / os.getenv('DUCK_PATH', 'data/db/dna_duck.db')
 DOWNLOADS_DIR = _resolve_downloads_dir()
 
 # Organizer Skill
@@ -77,7 +77,7 @@ WAKE_WORD_THRESHOLD = float(os.getenv('WAKE_WORD_THRESHOLD', '0.5'))
 WAKE_WORD_FRAMEWORK = os.getenv('WAKE_WORD_FRAMEWORK', 'onnx')
 GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY', '')
 GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
-CLOUD_LLM_MODEL = os.getenv('CLOUD_LLM_MODEL', 'gemma-4-31b-it')
+CLOUD_LLM_MODEL = os.getenv('CLOUD_LLM_MODEL', 'gemini-3.5-flash-lite')
 OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'gemma4:e2b')
 OLLAMA_VISION_MODEL = os.getenv('OLLAMA_VISION_MODEL', 'moondream')
 OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://localhost:11434/api/chat')

@@ -4,7 +4,7 @@
 # ──────────────────────────────────────────────────────────────────────
 
 import logging
-from skills.data_engine import run_analysis, run_quick_analysis, recall_recent_data
+from skills.data_engine import run_analysis, run_quick_analysis, recall_recent_data, load_dataset
 
 logger = logging.getLogger('dna.skill.data')
 
@@ -27,8 +27,15 @@ def recall_data(question: str = "") -> str:
     return recall_recent_data(question=question)
 
 
+def load_dataset_tool(keyword: str = "") -> str:
+    """Load a dataset by keyword using fuzzy matching and set active session context."""
+    logger.info('data_skill delegating load_dataset to data_engine')
+    return load_dataset(keyword=keyword)
+
+
 TOOLS = {
     'analyze_data': analyze_data,
     'quick_analyze': quick_analyze,
     'recall_data': recall_data,
+    'load_dataset': load_dataset_tool,
 }

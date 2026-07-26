@@ -27,7 +27,9 @@ class DataProfiler:
         """Generate full statistical profile. Returns structured dict."""
         self.query_log = []
         con = duckdb.connect()
+        self.con = con
         try:
+
             # Check if file is Excel
             is_excel = path.lower().endswith(('.xlsx', '.xls'))
             
@@ -42,11 +44,20 @@ class DataProfiler:
                 table_ref = 'data_table'
                 row_count = len(df_excel)
             else:
-                table_ref = f"read_csv_auto('{escaped_path}')"
-                row_count = self._count_rows(con, table_ref)
+                try:
+                    table_ref = f"read_csv_auto('{escaped_path}')"
+                    row_count = self._count_rows(con, table_ref)
+                except Exception as e:
+                    logger.warning('DuckDB read_csv_auto failed, falling back to Pandas: %s', e)
+                    df_fallback = pd.read_csv(path, encoding='unicode_escape')
+                    con.register('data_table', df_fallback)
+                    table_ref = 'data_table'
+                    row_count = len(df_fallback)
 
+            self.table_ref = table_ref
             logger.info('Profile: %s - Row count: %d', Path(path).name, row_count)
             schema = self._get_schema(con, table_ref, row_count)
+
 
             # Determine size strategy
             if row_count <= self.LARGE_THRESHOLD:
@@ -73,6 +84,8 @@ class DataProfiler:
             correlations = self._correlations(df)
             null_summary = self._null_summary(con, table_ref, schema)
 
+            domain_aggregations = self._compute_domain_aggregations(con, table_ref, schema)
+
             profile_data = {
                 'file_path': path,
                 'row_count': row_count,
@@ -84,6 +97,7 @@ class DataProfiler:
                 'null_summary': null_summary,
                 'quality_score': quality_score,
                 'size_strategy': strategy,
+                'domain_aggregations': domain_aggregations,
             }
 
             # Run target breakdowns if target column exists
@@ -97,6 +111,7 @@ class DataProfiler:
                 profile_data['target_breakdowns'] = None
 
             return profile_data
+
 
         except Exception as e:
             logger.error('Profiling failed: %s', e, exc_info=True)
@@ -171,7 +186,7 @@ class DataProfiler:
                 return self._cached_excel_df
             return pd.read_excel(path)
         else:
-            return pd.read_csv(path)
+            return pd.read_csv(path, encoding='unicode_escape')
 
     def _load_sample(self, con, path: str, is_excel: bool) -> pd.DataFrame:
         """Sample data using DuckDB or Pandas."""
@@ -184,7 +199,7 @@ class DataProfiler:
             return con.execute(f"SELECT * FROM {table_ref} USING SAMPLE {self.SAMPLE_SIZE}").fetchdf()
 
     def _numeric_stats(self, df: pd.DataFrame) -> dict:
-        """mean, median, std, min, max, q1, q3, skewness, kurtosis per numeric col."""
+        """mean, median, std, min, max, q1, q3, skewness, kurtosis, and outlier metrics per numeric col."""
         numeric_cols = df.select_dtypes(include=[np.number]).columns
         stats_dict = {}
 
@@ -195,6 +210,7 @@ class DataProfiler:
 
             q1 = float(series.quantile(0.25))
             q3 = float(series.quantile(0.75))
+            iqr = q3 - q1
             mean = float(series.mean())
             median = float(series.median())
             std = float(series.std()) if len(series) > 1 else 0.0
@@ -205,6 +221,20 @@ class DataProfiler:
             skewness = float(stats.skew(series)) if len(series) > 2 and std > 0 else 0.0
             kurt = float(stats.kurtosis(series)) if len(series) > 3 and std > 0 else 0.0
 
+            # Outlier metrics
+            lower_fence = float(q1 - 1.5 * iqr) if iqr > 0 else minimum
+            upper_fence = float(q3 + 1.5 * iqr) if iqr > 0 else maximum
+            outliers = series[(series < lower_fence) | (series > upper_fence)] if iqr > 0 else pd.Series(dtype=float)
+            
+            outlier_count = int(len(outliers))
+            outlier_pct = float(outlier_count / len(series) * 100.0) if len(series) > 0 else 0.0
+            
+            outlier_sum = float(outliers.sum()) if outlier_count > 0 else 0.0
+            total_sum = float(series.sum())
+            outlier_impact_pct = float(outlier_sum / total_sum * 100.0) if total_sum != 0 else 0.0
+
+            extremes = [float(round(x, 2)) for x in sorted(outliers.to_list(), key=lambda x: abs(x), reverse=True)[:5]] if outlier_count > 0 else []
+
             stats_dict[col] = {
                 'mean': mean,
                 'median': median,
@@ -214,10 +244,18 @@ class DataProfiler:
                 'q1': q1,
                 'q3': q3,
                 'skew': skewness,
-                'kurt': kurt
+                'kurt': kurt,
+                'iqr': iqr,
+                'lower_fence': lower_fence,
+                'upper_fence': upper_fence,
+                'outlier_count': outlier_count,
+                'outlier_pct': outlier_pct,
+                'outlier_impact_pct': outlier_impact_pct,
+                'top_extremes': extremes
             }
 
         return stats_dict
+
 
     def _categorical_stats(self, df: pd.DataFrame) -> dict:
         """Categorical value counts and cardinality per categorical column."""
@@ -291,20 +329,8 @@ class DataProfiler:
             if name_lower in common_targets:
                 return col['name']
                 
-        # 3. Fallback 1: Any column with exactly 2 unique values
-        for col in schema:
-            if col.get('uniques') == 2:
-                return col['name']
-                
-        # 4. Fallback 2: Any column with 3 unique values
-        for col in schema:
-            if col.get('uniques') == 3:
-                return col['name']
-                
-        # 5. Fallback 3: Return the last column in the schema
-        if schema:
-            return schema[-1]['name']
-            
+        # 3. Only fallback to 2-unique if the dataset is small/medium and we are desperate
+        # BUT for robust engines, we shouldn't guess wildly. Return None for transactional data.
         return None
 
     def _determine_positive_class(self, con, table_ref: str, target_col: str) -> str:
@@ -471,3 +497,155 @@ class DataProfiler:
             logger.error('Error running target breakdowns: %s', e)
             
         return breakdowns
+
+    def _compute_domain_aggregations(self, con, table_ref: str, schema: list[dict]) -> dict:
+        """Compute enterprise domain aggregations (revenue, profit margins, loss-making categories)."""
+        try:
+            lower_map = {c['name'].lower(): c['name'] for c in schema}
+            
+            sales_col = None
+            for k in ['sales', 'revenue', 'total_amount', 'amount', 'turnover']:
+                if k in lower_map:
+                    sales_col = lower_map[k]
+                    break
+            
+            profit_col = None
+            for k in ['profit', 'net_profit', 'margin', 'income', 'gain']:
+                if k in lower_map:
+                    profit_col = lower_map[k]
+                    break
+
+            discount_col = None
+            for k in ['discount', 'discount_rate', 'disc']:
+                if k in lower_map:
+                    discount_col = lower_map[k]
+                    break
+
+            result = {}
+            
+            if sales_col:
+                q = f'SELECT SUM("{sales_col}") AS total_sales'
+                if profit_col:
+                    q += f', SUM("{profit_col}") AS total_profit'
+                if discount_col:
+                    q += f', AVG("{discount_col}") AS avg_discount'
+                q += f' FROM {table_ref}'
+                
+                tot_df = con.execute(q).fetchdf()
+                if not tot_df.empty:
+                    tot_sales = float(tot_df['total_sales'].iloc[0] or 0.0)
+                    result['total_sales'] = tot_sales
+                    if profit_col and 'total_profit' in tot_df.columns:
+                        tot_profit = float(tot_df['total_profit'].iloc[0] or 0.0)
+                        result['total_profit'] = tot_profit
+                        result['blended_margin_pct'] = (tot_profit / tot_sales * 100.0) if tot_sales > 0 else 0.0
+                    if discount_col and 'avg_discount' in tot_df.columns:
+                        avg_disc = float(tot_df['avg_discount'].iloc[0] or 0.0)
+                        result['avg_discount_pct'] = avg_disc * 100.0 if avg_disc <= 1.0 else avg_disc
+
+            if sales_col and profit_col:
+                loss_q = f"""
+                SELECT COUNT(*) AS loss_orders, SUM("{profit_col}") AS total_loss
+                FROM {table_ref}
+                WHERE "{profit_col}" < 0
+                """
+                loss_df = con.execute(loss_q).fetchdf()
+                if not loss_df.empty:
+                    result['loss_orders_count'] = int(loss_df['loss_orders'].iloc[0] or 0)
+                    result['total_loss_amount'] = float(loss_df['total_loss'].iloc[0] or 0.0)
+
+            if profit_col and discount_col:
+                max_d = con.execute(f'SELECT MAX("{discount_col}") FROM {table_ref}').fetchone()[0] or 0.0
+                disc_thresh = 0.3 if max_d <= 1.0 else 30.0
+                disc_loss_q = f"""
+                SELECT COUNT(*) AS high_disc_orders, SUM("{profit_col}") AS high_disc_profit
+                FROM {table_ref}
+                WHERE "{discount_col}" >= {disc_thresh}
+                """
+                disc_df = con.execute(disc_loss_q).fetchdf()
+                if not disc_df.empty:
+                    result['high_discount_orders'] = int(disc_df['high_disc_orders'].iloc[0] or 0)
+                    result['high_discount_profit'] = float(disc_df['high_disc_profit'].iloc[0] or 0.0)
+
+            date_col = None
+            for k in ['order date', 'order_date', 'date', 'transaction_date', 'year', 'created_at', 'timestamp']:
+                if k in lower_map:
+                    date_col = lower_map[k]
+                    break
+
+            yoy_data = []
+            if sales_col and date_col:
+                try:
+                    profit_select = f', SUM("{profit_col}") AS total_profit' if profit_col else ''
+                    yoy_q = f"""
+                    SELECT 
+                        EXTRACT(YEAR FROM COALESCE(
+                            TRY_STRPTIME(CAST("{date_col}" AS VARCHAR), '%m/%d/%Y'),
+                            TRY_STRPTIME(CAST("{date_col}" AS VARCHAR), '%d/%m/%Y'),
+                            TRY_STRPTIME(CAST("{date_col}" AS VARCHAR), '%Y-%m-%d'),
+                            TRY_CAST("{date_col}" AS TIMESTAMP)
+                        )) AS fiscal_year,
+                        SUM("{sales_col}") AS total_revenue
+                        {profit_select}
+                    FROM {table_ref}
+                    WHERE "{date_col}" IS NOT NULL
+                    GROUP BY 1
+                    HAVING fiscal_year IS NOT NULL AND fiscal_year >= 1990 AND fiscal_year <= 2100
+                    ORDER BY fiscal_year ASC
+                    """
+                    yoy_df = con.execute(yoy_q).fetchdf()
+                    if not yoy_df.empty:
+                        prev_rev = None
+                        for _, row in yoy_df.iterrows():
+                            year_val = row['fiscal_year']
+                            if pd.isna(year_val):
+                                continue
+                            year_str = str(int(year_val))
+                            rev = float(row['total_revenue'] or 0.0)
+                            prof = float(row['total_profit'] or 0.0) if profit_col and 'total_profit' in row else 0.0
+                            margin = (prof / rev * 100.0) if rev > 0 else 0.0
+                            
+                            growth_pct = None
+                            if prev_rev is not None and prev_rev > 0:
+                                growth_pct = ((rev - prev_rev) / prev_rev) * 100.0
+                            prev_rev = rev
+
+                            yoy_data.append({
+                                'year': year_str,
+                                'revenue': rev,
+                                'profit': prof,
+                                'margin_pct': margin,
+                                'growth_pct': growth_pct
+                            })
+                except Exception as e:
+                    logger.warning("YoY SQL aggregation failed: %s", e)
+            
+            result['yoy_data'] = yoy_data
+
+            groupings = {}
+            for col in schema:
+                c_name = col['name']
+                uniques = col.get('uniques', 0)
+                if 2 <= uniques <= 30:
+                    if sales_col and profit_col:
+                        grp_q = f"""
+                        SELECT CAST("{c_name}" AS VARCHAR) AS category,
+                               SUM("{sales_col}") AS sales,
+                               SUM("{profit_col}") AS profit,
+                               (SUM("{profit_col}") / NULLIF(SUM("{sales_col}"), 0) * 100.0) AS margin_pct
+                        FROM {table_ref}
+                        WHERE "{c_name}" IS NOT NULL
+                        GROUP BY 1
+                        ORDER BY sales DESC
+                        LIMIT 10
+                        """
+                        grp_df = con.execute(grp_q).fetchdf()
+                        if not grp_df.empty:
+                            groupings[c_name] = grp_df.to_dict(orient='records')
+            
+            result['dimensional_breakdowns'] = groupings
+            return result
+        except Exception as e:
+            logger.warning('Domain aggregations computation failed: %s', e)
+            return {}
+

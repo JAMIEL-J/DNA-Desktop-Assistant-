@@ -382,7 +382,13 @@ SIMPLE_INTENTS = [
     # Open URL (must be before generic open catch-all)
     (re.compile(r'\b(?:open|visit|go\s+to)\s+([\w.-]+\.[a-z]{2,})\b', re.I), 'open_url', lambda m: {'url': m.group(1).strip()}),
 
-    # --- DATA ANALYSIS ---
+    # --- DATASET LOADING & ANALYSIS ---
+    # "load the churn dataset", "hey load churn data", "use superstore dataset", "load dataset churn"
+    (re.compile(r'\b(?:load|use|bring\s+up)\s+(?:the\s+|my\s+)?(.+?)\s+(?:data|dataset|csv|file)\b', re.I),
+     'load_dataset', lambda m: {'keyword': _clean_arg(m.group(1))}),
+    (re.compile(r'\b(?:load|use|bring\s+up)\s+(?:data|dataset|csv|file)\s+(?:for\s+)?(.+)\b', re.I),
+     'load_dataset', lambda m: {'keyword': _clean_arg(m.group(1))}),
+
     # "analyze my data and show the top earners" (no keyword, with optional question)
     # MUST come before keyword pattern so "my" / "the" aren't captured as keywords
     (re.compile(r'\b(?:analy[sz]e|check|summarize|look at)\s+(?:my|the)\s+(?:data|date)(?:\s+(?:and\s+)?(.+))?$', re.I),
@@ -518,7 +524,7 @@ _CONTEXTUAL_SKILLS = {
     'enter_job_search_mode', 'next_jobs', 'previous_jobs',
     'chat',  # chat already handles its own, but this is a safety net
     'read_screen', 'describe_screen', 'find_error',
-    'quick_analyze', 'analyze_data', 'recall_data',  # data analysis follow-ups
+    'quick_analyze', 'analyze_data', 'recall_data', 'load_dataset',  # data analysis follow-ups
 }
 
 

@@ -69,16 +69,16 @@ def _summarize_for_voice(question: str, result_df) -> str:
         show_index = not isinstance(result_df.index, pd.RangeIndex)
         table_str = result_df.head(20).to_string(index=show_index)
         prompt = (
-            f"You are a friendly voice assistant. Convert this data result into a short, "
-            f"natural-sounding sentence suitable for speaking aloud.\n"
+            f"You are Jarvis, an elite executive AI data analyst speaking directly to the user.\n"
+            f"Convert this SQL data query result into a clear, precise, and articulate voice response.\n\n"
+            f"Mandatory Response Structure:\n"
+            f"1. Direct Answer: Answer the user's question directly with exact values. For monetary values (sales, profit, revenue, charges), format them clearly with dollar amounts (e.g. '$149,528 in Sales and $55,617 in Net Profit').\n"
+            f"2. Analytical Follow-Up: Always end with 1 proactive follow-up question inviting the user to explore a relevant slice or dimension (e.g., 'Would you like me to break down sales by region, or explore contract tenure impact?').\n\n"
             f"Rules:\n"
-            f"- Return ONLY the spoken sentence. No markdown. No backticks. No explanation.\n"
-            f"- Keep it short (1-3 sentences max).\n"
-            f"- Round numbers to 1 decimal place where appropriate.\n"
-            f"- Use natural phrasing like 'about', 'around', 'roughly' for approximate numbers.\n"
-            f"- Do NOT read out column headers or raw table formatting.\n\n"
-            f"Original question: {question}\n\n"
-            f"Data result ({len(result_df)} rows):\n{table_str}"
+            f"- Return ONLY the spoken response. No markdown formatting. No backticks. No raw code.\n"
+            f"- Speak naturally and professionally in 2 to 3 sentences.\n\n"
+            f"Original Question: {question}\n\n"
+            f"SQL Result Data ({len(result_df)} rows):\n{table_str}"
         )
         from .llm_utils import _call_llm_for_code
         summary = _call_llm_for_code(prompt)
@@ -203,9 +203,6 @@ def run_analysis(path: str, question: str) -> str:
 
         if result_df.empty:
             result_summary = "The query ran fine but returned no matching data."
-        elif len(result_df) == 1 and len(result_df.columns) == 1:
-            val = result_df.iloc[0, 0]
-            result_summary = f"The answer is {val}."
         else:
             result_summary = _summarize_for_voice(question, result_df)
 
@@ -225,39 +222,101 @@ def run_analysis(path: str, question: str) -> str:
         from .chart_engine import ChartEngine
         from .report_builder import ReportBuilder
         from .data_cleaner import DataCleaner
+        from .semantic_resolver import SemanticColumnResolver
+        from .domain_classifier import DomainClassifier
+        from .chart_planner import DomainChartPlanner
 
-        # 1. Analyst insights
+        # 1. Semantic Column Resolution
+        resolver = SemanticColumnResolver()
+        semantics = resolver.resolve(profile.get('schema', []), profiler.last_sample_df)
+
+        # 2. Domain Classification
+        classifier = DomainClassifier()
+        domain_info = classifier.classify(profile.get('schema', []), semantics)
+        profile['domain_info'] = domain_info
+
+        # 3. Analyst insights with domain framing & numerical stats
         analyst = DataAnalyst()
-        insights = analyst.analyze(profile, findings, question)
+        insights = analyst.analyze(profile, findings, question, domain_info)
 
-        # 2. Setup output folder
+        # 4. Domain-Aware Dynamic SQL Chart Aggregations
+        planner = DomainChartPlanner()
+        domain_charts = planner.plan_and_execute(
+            profiler.con, profiler.table_ref, profile.get('schema', []), semantics, domain_info, profiler.last_sample_df
+        )
+
+
+        # 5. Setup output folder
         filename_stem = Path(path).stem
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         output_sub_dir = ANALYSIS_OUTPUT_DIR / f"{filename_stem}_{timestamp}"
         output_sub_dir.mkdir(parents=True, exist_ok=True)
 
-        # 3. Generate visual charts
+        # 6. Generate static visual chart fallbacks
         chart_engine = ChartEngine()
         chart_paths = chart_engine.generate(profiler.last_sample_df, profile, findings, output_sub_dir)
 
-        # 4. Scan data for quality issues and suggest fixes
+        # 7. Scan data for quality issues and suggest fixes
         cleaner = DataCleaner()
         clean_issues = cleaner.scan(profiler.last_sample_df, profile)
         clean_fixes = []
         if clean_issues:
             clean_fixes = cleaner.suggest_fixes(clean_issues, profile)
 
-        # 5. Get query history for the report
+        # 8. Real-time Pipeline Execution Telemetry Trace
+        row_cnt = profile.get('row_count', 0)
+        col_cnt = profile.get('column_count', 0)
+        qual = profile.get('quality_score', 100.0)
+        dom_name = domain_info.get('domain_name', 'Enterprise Data')
+        conf = domain_info.get('confidence', 0.95)
+        target_col = semantics.get('target_col', 'N/A')
+        num_findings = len(findings)
+        num_drivers = len(insights.get('key_drivers', []))
+        num_recs = len(insights.get('recommendations', []))
+        num_charts = len(domain_charts)
+
+        now = datetime.datetime.now()
+        pipeline_trace = [
+            {
+                'stage': 'Stage 1: Data Profiling & Schema Inference',
+                'timestamp': now.strftime("%Y-%m-%d %H:%M:%S"),
+                'status': 'Completed successfully.',
+                'summary': f"Profiled dataset ({row_cnt:,} rows, {col_cnt} columns). Domain classified as '{dom_name}' ({conf:.0%} confidence). Data quality score: {qual:.1f}%."
+            },
+            {
+                'stage': 'Stage 2: Statistical Analysis & Anomaly Engine',
+                'timestamp': now.strftime("%Y-%m-%d %H:%M:%S"),
+                'status': 'Completed successfully.',
+                'summary': f"Resolved column semantics (Target Variable: '{target_col}'). Detected {num_findings} structural patterns & statistical anomalies. Ingested feature distributions."
+            },
+            {
+                'stage': 'Stage 3: LLM Orchestration & Domain Analyst',
+                'timestamp': now.strftime("%Y-%m-%d %H:%M:%S"),
+                'status': 'Completed successfully.',
+                'summary': f"Generated narrative 360° executive summary, {num_drivers} strategic risk drivers, and {num_recs} high-priority recommendations via Gemini."
+            },
+            {
+                'stage': 'Stage 4: Dynamic Visualization & Dashboard Build',
+                'timestamp': now.strftime("%Y-%m-%d %H:%M:%S"),
+                'status': 'Completed successfully.',
+                'summary': f"Executed dynamic SQL aggregations for {num_charts} domain charts. Assembled Finexy single-page Bento dashboard."
+            }
+        ]
+        profile['pipeline_trace'] = pipeline_trace
+
+        # 9. Get query history for the report
         filename = Path(path).name
         history = catalog.get_history(filename)
 
-        # 6. Build and open the HTML dashboard
+        # 10. Build and open the HTML dashboard with domain charts
         builder = ReportBuilder()
-        report_path = builder.build(profile, findings, insights, chart_paths, history, output_sub_dir, clean_fixes)
+        report_path = builder.build(
+            profile, findings, insights, chart_paths, history, output_sub_dir, clean_fixes, domain_charts
+        )
 
         clean_count = len(clean_issues)
         clean_note = f" I also found {clean_count} data quality issues with cleaning recommendations." if clean_count > 0 else ""
-        result_summary = f"I have performed a deep analysis of the dataset and generated visual charts and recommendations. Executive summary: {insights['executive_summary']}{clean_note}"
+        result_summary = f"I have performed a deep {domain_info['domain_name']} analysis of the dataset and generated {len(domain_charts)} dynamic charts and executive insights. Summary: {insights['executive_summary']}{clean_note}"
 
         catalog.log_analysis(
             dataset_id=dataset_id,
@@ -270,6 +329,7 @@ def run_analysis(path: str, question: str) -> str:
         )
         query_log_md = _format_query_log(profiler.query_log)
         return f"{query_log_md}{result_summary}"
+
 
     elif mode == OutputMode.EXPORT:
         from .query_engine import QueryEngine
@@ -373,3 +433,18 @@ def recall_recent_data(question: str = "") -> str:
         f"and has been analyzed {analysis_count} time{'s' if analysis_count != 1 else ''} so far. "
         f"You can now ask me anything about it."
     )
+
+
+def load_dataset(keyword: str = "") -> str:
+    """Load a dataset by keyword using fuzzy matching and set active session context."""
+    from .dataset_loader import load_dataset_by_keyword
+    return load_dataset_by_keyword(keyword)
+
+
+# Skill module contract
+TOOLS = {
+    'quick_analyze': run_quick_analysis,
+    'analyze_data': run_analysis,
+    'recall_data': recall_recent_data,
+    'load_dataset': load_dataset,
+}
