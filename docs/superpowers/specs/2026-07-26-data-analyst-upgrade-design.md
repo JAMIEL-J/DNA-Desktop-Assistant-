@@ -1,7 +1,7 @@
 # Data Analyst Module Modernization & Intelligence Upgrade Spec
 
 **Date:** 2026-07-26  
-**Status:** Approved  
+**Status:** Approved (Refined)  
 **Target Module:** `skills/data_engine/` (`analyst.py`, `profiler.py`, `detector.py`, `chart_engine.py`, `report_builder.py`)
 
 ---
@@ -13,7 +13,7 @@ The Data Analyst module in the DNA Assistant architecture requires a core modern
 ### Core Problems Solved
 1. **Omission of Outlier Statistics in LLM Context**: `profiler.py` and `detector.py` computed statistical fences, but `analyst.py` omitted numeric stats and outlier metrics from the prompt sent to the LLM.
 2. **Lack of Domain Classification & Semantic Mapping**: Datasets were processed using basic static fallbacks (top 3 categorical counts, raw histograms) without understanding column semantics or business domain context.
-3. **Limited & Generic Chart Combinations**: Visualizations were capped at 3-4 basic single-variable charts instead of comprehensive multi-variable domain chart combinations.
+3. **Arbitrary Chart Caps & Low Complexity**: Visualizations were capped at fixed numbers instead of scaling dynamically based on dataset richness and column count.
 4. **Disconnected Insights**: Visual charts lacked explicit analytical takeaways linking chart patterns to business insights.
 
 ---
@@ -44,7 +44,7 @@ The Data Analyst module in the DNA Assistant architecture requires a core modern
           │                                             │
 ┌─────────▼──────────────┐                   ┌──────────▼─────────────┐
 │  Domain Chart Planner  │                   │ Enriched Data Analyst  │
-│  (6-10 DuckDB SQLs)    │                   │  (LLM Prompt + JSON)   │
+│  (Dynamic Adaptive SQL)│                   │  (LLM Prompt + JSON)   │
 └─────────┬──────────────┘                   └──────────┬─────────────┘
           │                                             │
           └──────────────────────┬──────────────────────┘
@@ -66,27 +66,30 @@ Resolves raw/messy dataset column headers into standard semantic roles:
 - `PRIMARY_DIMENSION`: Key categorical grouping (`Category`, `Department`, `Region`, `Channel`, `Product_Line`).
 - `SECONDARY_DIMENSION`: Secondary grouping (`Segment`, `Sub_Category`, `Job_Role`, `Customer_Type`, `Store`).
 - `TEMPORAL_DIMENSION`: Time column (`Order_Date`, `Hire_Date`, `Timestamp`, `Year_Month`, `Created_At`).
+- `TARGET_LABEL`: Binary or classification outcome (`Churn`, `Status`, `Default`, `Converted`, `Is_Fraud`).
 - `ENTITY_ID`: High-cardinality identifier (`Order_ID`, `Customer_ID`, `Employee_ID`).
 
 **Resolution Mechanism:**
-1. Regex synonym lookup across 100+ common variations (e.g. `rev` -> `Revenue`, `dt_order` -> `Order_Date`).
+1. Regex synonym lookup across 100+ common variations (e.g. `rev` -> `Revenue`, `dt_order` -> `Order_Date`, `retention_flag` -> `Churn`).
 2. Data type and cardinality analysis via DuckDB schema statistics.
 3. Fallback LLM semantic classification for ambiguous custom headers.
 
 ---
 
-### 3.2 Domain Classifier (`skills/data_engine/domain_classifier.py`)
-Classifies the dataset into one of 5 primary business domains or a General fallback:
-- **Sales / E-commerce**
-- **HR / People**
-- **Finance / Accounting**
-- **Marketing / Campaigns**
-- **Operations / Logistics**
-- **General / Analytical**
+### 3.2 Domain Classifier & Specialized High-Accuracy Domain Rules (`skills/data_engine/domain_classifier.py`)
+Classifies the dataset with deep focus on **Sales**, **Finance**, and **Churn**:
 
-**Classification Strategy:**
-- Hybrid approach: Signature matching based on resolved column roles and domain vocabulary keywords.
-- Lightweight LLM fallback when domain confidence score is < 0.4.
+1. **Sales / E-Commerce Domain**:
+   - Signature: `Sales`, `Revenue`, `Profit`, `Discount`, `Quantity`, `Category`, `Region`, `Customer`.
+   - Key Analytical Targets: Total Volume, Profitability Margin, Price Elasticity, Discount Sensitivity, Regional Pareto.
+2. **Finance / Accounting Domain**:
+   - Signature: `Amount`, `Balance`, `Credit`, `Debit`, `Expense`, `Transaction`, `Risk`, `Account`, `Loss`.
+   - Key Analytical Targets: Cash Flow Ratio, Debit vs Credit Balance, Transaction Value Skew, Account Volatility, High-Value Transaction Anomalies.
+3. **Customer Churn / Retention Domain**:
+   - Signature: `Churn`, `Status`, `Tenure`, `Contract`, `MonthlyCharges`, `TotalCharges`, `Subscription`, `Activity_Score`.
+   - Key Analytical Targets: Baseline Churn Event Rate, Cohort Churn Rates, Tenure Risk Curve, Contract & Plan Sensitivity, High-Value Customer Churn Exposure.
+4. **HR / People**: `Department`, `Salary`, `Tenure`, `Performance`, `Job_Role`.
+5. **Marketing & Operations**: `Campaign`, `Clicks`, `Spend`, `Ship_Mode`, `Warehouse`.
 
 ---
 
@@ -99,19 +102,35 @@ Extends numerical profiling to calculate comprehensive outlier metrics:
 
 ---
 
-### 3.4 Domain Chart Planner (`skills/data_engine/chart_planner.py`)
-Generates an expanded suite of **6 to 10 multi-variable SQL aggregation queries** executed via DuckDB:
+### 3.4 Dynamic Adaptive Chart Planner (`skills/data_engine/chart_planner.py`)
+Generates a **dynamically scaled chart suite (uncapped)** based on dataset column count, categorical cardinality, and numerical richness:
+- **Small Datasets (1–5 columns)**: 4–6 targeted core charts.
+- **Medium Datasets (6–12 columns)**: 8–12 multi-variable combinations.
+- **Large Datasets (13+ columns)**: 12–16+ comprehensive multi-dimensional charts.
 
-1. **Primary Volume & Revenue Driver** (Bar Chart): `SUM(Primary_Metric)` by `Primary_Dimension`
-2. **Profitability & Efficiency Comparison** (Grouped / Dual-Axis Bar): `AVG(Secondary_Metric)` vs `SUM(Primary_Metric)` by `Primary_Dimension`
-3. **Temporal Trend & Momentum** (Line Chart): `SUM(Primary_Metric)` over `Time`
-4. **Sub-Segment Composition** (Stacked Bar / Donut Chart): Distribution of `Secondary_Dimension` within top `Primary_Dimensions`
-5. **Outlier & Value Distribution Scatter** (Scatter Plot): `Primary_Metric` vs `Secondary_Metric` with highlighted fence thresholds
-6. **Pareto Concentration (80/20 Rule)** (Cumulative Chart): Contribution of top categories to total metric sum
-7. **Cross-Tabulation Matrix** (Heatmap): Density across `Primary_Dimension` x `Secondary_Dimension`
-8. **Seasonality / Cyclical Pattern** (Bar Chart): Metric grouped by `Day_of_Week` or `Month`
-9. **At-Risk / Low-Performing Cohorts** (Bar Chart): Bottom 10 categories sorted by lowest margin / performance
-10. **Statistical Volatility & Spread** (Boxplot / Histogram): Distribution of primary metric values and outlier bounds
+#### Specialized Chart Combinations Matrix:
+* **Sales Combinations**:
+  - `SUM(Sales)` by `Category` (Bar)
+  - `AVG(Profit_Margin)` vs `AVG(Discount)` by `Category` (Dual Axis / Grouped Bar)
+  - `SUM(Sales)` & `SUM(Profit)` over Time (Monthly Trend)
+  - Sub-Category Contribution to Revenue (Stacked Bar / Donut)
+  - Price vs Quantity Scatter with Outlier Fences
+  - Cumulative 80/20 Revenue Pareto Chart
+  - Regional Profitability Heatmap
+* **Finance Combinations**:
+  - Transaction Amount Frequency Distribution (Histogram + KDE)
+  - Cash Flow / Debit vs Credit Breakdown (Grouped Bar)
+  - Transaction Value vs Risk Score Scatter Plot
+  - Monthly Expense Category Breakdown
+  - Top 1% Extreme Financial Transaction Outliers (Scatter / Boxplot)
+  - Cumulative Loss Concentration by Account Group
+* **Churn & Retention Combinations**:
+  - Baseline Churn Rate by Contract Type (Bar)
+  - Tenure vs Churn Rate Cohort Curve (Line / Step)
+  - Monthly Recurring Revenue (MRR) at Risk by Churn Status (Stacked Bar)
+  - Monthly Charges vs Total Charges Churn Scatter Plot
+  - Churn Rate by Customer Segment & Payment Method (Heatmap)
+  - Support Ticket Volume vs Churn Probability
 
 ---
 
@@ -119,12 +138,12 @@ Generates an expanded suite of **6 to 10 multi-variable SQL aggregation queries*
 Updates `ANALYST_RESPONSE_SCHEMA` to include:
 - `outliers_and_anomalies`: Dedicated array for outlier findings with column name, severity, impact summary, and business recommendation.
 - `chart_takeaways`: Key takeaway annotations linked directly to each generated domain chart.
-- Enhanced prompt context containing explicit numerical statistics, outlier impact sums, and domain-specific terminology.
+- Enhanced prompt context containing explicit numerical statistics, outlier impact sums, and domain-specific terminology for Sales, Finance, and Churn.
 
 ---
 
 ### 3.6 Bento Report Builder (`skills/data_engine/report_builder.py`)
-- Renders responsive Chart.js visual widgets dynamically for all 6-10 domain chart combinations.
+- Renders responsive Chart.js visual widgets dynamically for all adaptive chart combinations.
 - Embeds a **Chart Insight Takeaway Banner** beneath every chart.
 - Introduces an **Outliers & Extreme Volatility Highlights** card grid on the Insights and Overview tabs.
 - Updates the Execution Audit Log to record Semantic Resolution, Domain Classification, Chart Aggregation SQLs, and Outlier Analysis.
@@ -133,7 +152,7 @@ Updates `ANALYST_RESPONSE_SCHEMA` to include:
 
 ## 4. Verification & Testing Criteria
 
-1. **End-to-End Execution**: Run on `Superstore.csv` and verify all 6-10 charts render with paired chart takeaway banners.
-2. **Outlier Verification**: Confirm outlier volume impact percentages (e.g. % of total revenue from top outlier orders) are accurate and visible in report insights.
-3. **Domain Adaptation**: Test on Sales, HR, and Financial datasets to confirm dynamic adaptation of domain vocabulary and chart types.
+1. **Adaptive Chart Scaling**: Confirm small datasets generate 4–6 charts while complex datasets generate 12–16+ charts dynamically without artificial truncation.
+2. **Priority Domain Accuracy**: Validate specialized metrics on Sales (`Superstore.csv`), Finance (`transactions.csv`), and Churn (`churn.csv`) datasets.
+3. **Outlier Verification**: Confirm outlier volume impact percentages (e.g. % of total revenue from top outlier orders) are accurate and visible in report insights.
 4. **Schema Resilience**: Test with datasets containing non-standard column names (e.g., `amt`, `dept_code`, `emp_sal`) to confirm Semantic Column Resolver fallback.
