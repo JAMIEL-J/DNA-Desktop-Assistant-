@@ -10,35 +10,65 @@ Unlike cloud-based assistants, DNA operates entirely on your hardware, ensuring 
 [![Windows Only](https://img.shields.io/badge/platform-Windows-blue.svg)](https://www.microsoft.com/windows)
 [![MIT License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Status: Active Development](https://img.shields.io/badge/status-Active%20Development-brightgreen.svg)]()
+[![Ollama](https://img.shields.io/badge/LLM-Ollama-black?logo=ollama)](https://ollama.ai)
+[![DuckDB](https://img.shields.io/badge/Data-DuckDB-yellow?logo=duckdb)](https://duckdb.org/)
+[![PySide6](https://img.shields.io/badge/UI-PySide6-brightgreen?logo=qt)](https://doc.qt.io/qtforpython/)
+[![Faster-Whisper](https://img.shields.io/badge/STT-Faster--Whisper-orange)](https://github.com/SYSTRAN/faster-whisper)
+
+---
+
+<details>
+<summary><b>View Application Interfaces</b></summary>
+
+### The Orb Interface
+[Insert Orb Interface Screenshot Here]
+
+### System Tray Status
+[Insert System Tray Icon Screenshot Here]
+
+</details>
 
 ---
 
 ## 🚀 Core Capabilities
 
-### 🎙️ Voice Orchestration
-- **Always-On Awareness**: Low-CPU wake word detection (OpenWakeWord) that triggers the assistant instantly.
-- **Intelligent Listening**: A multi-pass STT pipeline (Faster-Whisper) with transcript normalization and "incomplete command" detection to handle natural speech pauses.
-- **Natural Expression**: Low-latency offline TTS (Piper) with a **Hybrid Humanization Path** that blends LLM-generated personality with zero-latency local rephrasing.
+<details open>
+<summary><b>🎙️ Voice Orchestration & Processing</b></summary>
 
-### 🖥️ Deep OS Integration
-- **System Control**: Seamless management of volume, brightness, media, and power states.
-- **Process Intelligence**: Ability to list heavy processes, terminate tasks, and monitor system health proactively.
-- **File Mastery**: Fuzzy file searching, recursive directory exploration, and automated folder organization.
-- **Screen Awareness**: Local vision capabilities (Moondream) to describe the screen and debug errors in real-time.
+- **Wake Word Detection:** Always-on listening using OpenWakeWord for zero-latency activation.
+- **Robust Transcription:** Powered by Faster-Whisper, featuring fast and smart dual-path decoding with support for partial phrases and dynamic continuation capture.
+- **Local Text-to-Speech:** Generates fluid natural voice output via Piper-TTS running on ONNX Runtime.
 
-### 📊 Data Analysis Superpowers
-DNA implements a specialized **Data Routing Strategy** to handle datasets of any size:
-- **NL2SQL (via DuckDB)**: High-performance querying, filtering, and aggregation for massive datasets (10M+ rows) without memory overflow.
-- **NL2Py (via Sandboxed Pandas)**: Complex transformations, feature engineering, and visual plotting using a restricted Python execution environment.
-- **Automatic Routing**: DNA intelligently switches between DuckDB and Pandas based on row count (100K threshold) and intent.
+</details>
 
-### 🧠 Behavioral Intelligence
-- **Contextual Memory**: A session-aware resolver that handles pronouns ("open *that* file") and and maintains conversation history in SQLite.
-- **Multi-Step Planning**: The LLM doesn't just call tools; it generates **JSON Execution Plans**. DNA can find a file, analyze it, and then plot a chart—all from one command.
-- **Active Learning**: Learns user preferences and custom aliases (e.g., "my project" $\rightarrow$ `D:\Work\ProjectX`) dynamically.
-- **Proactive Monitoring**: Background daemon threads that alert you to CPU spikes or new downloads without being asked.
+<details open>
+<summary><b>🖥️ System & Desktop Control</b></summary>
 
----
+- **Application Management:** Launch and close common applications intelligently.
+- **Resource Monitoring:** Background process monitoring using `psutil`, capable of identifying resource-heavy tasks.
+- **Volume & Screen Control:** Automated volume adjustment using Windows COM and screen tracking/screenshots using `pyautogui`.
+- **System Tray Presence:** Lightweight system tray visualizer to indicate listening state using `pystray`.
+
+</details>
+
+<details open>
+<summary><b>📊 Data Analytics & Data Engineering</b></summary>
+
+- **High-Speed SQL:** Leverages DuckDB for querying massive datasets entirely locally.
+- **Pandas Sandbox:** Uses sandboxed Pandas execution for ad-hoc aggregations and CSV-based data science workflows.
+
+</details>
+
+<details open>
+<summary><b>🧠 Advanced Intelligence & Workflows</b></summary>
+
+- **LLM Reasoning:** Integrates with local Ollama models for processing ambiguous language and complex planning.
+- **Memory & Graph Engine:** Maintains persistent SQLite conversation memory and graph sync using `GraphProcessor`.
+- **Proactive Context Awareness:** Background window monitoring (`WindowMonitor`) that provides contextual information to the AI engine without prompt engineering.
+- **Morning Briefing:** Startup sequence aggregating weather, news, job search results, and personalized system status.
+- **Specialized Skills:** Over a dozen pluggable modules handling weather, job searches, news, learning queries, career operations, and file organization.
+
+</details>
 
 ---
 
@@ -162,27 +192,27 @@ Security is baked into the core:
 
 ---
 
----
-
 ## 💻 Technical Stack
 
-| Component | Technology | Note |
+DNA's architecture emphasizes local processing, combining low-latency components to act as an offline proxy between user intention and system execution.
+
+| Layer | Technology | Role |
 | :--- | :--- | :--- |
-| **LLM / Vision** | Gemma 2 / Qwen 3.5 / Moondream | Local via Ollama |
-| **Wake Word** | OpenWakeWord | ONNX Runtime |
-| **STT** | Faster-Whisper | CPU Optimized (int8) |
-| **TTS** | Piper | ONNX / Local |
-| **Data Engine** | DuckDB & Pandas | SQL $\rightarrow$ Py Routing |
-| **Memory** | SQLite | Session & History Persistence |
-| **UI** | PySide6 | Frameless Orb Interface |
+| **Intelligence** | `Ollama` (Local), `google-genai` | Multi-tier command routing and natural language planning. |
+| **Speech-To-Text** | `faster-whisper` (Int8 CPU) | Fast, local speech decoding and phrase boundary capture. |
+| **Text-To-Speech** | `piper-tts`, `onnxruntime` | Low-latency response generation. |
+| **Wake Word** | `openwakeword` | Microphone stream trigger mechanism. |
+| **Data Engine** | `duckdb`, `pandas` | Intelligent data querying and memory-efficient aggregations. |
+| **System Automation**| `pyautogui`, `psutil`, `pycaw` | Direct process, resource, and IO control. |
+| **User Interface** | `PySide6`, `WebSockets` | Real-time frontend visualization via Qt WebEngine. |
+| **State Storage** | `SQLite` | Immutable context session logs and knowledge graphs. |
+
 
 ### Hardware Optimization (8GB RAM Budget)
 DNA is engineered to run on modest hardware (e.g., Intel i3, 8GB RAM):
 - **Quantization**: Uses 4-bit quantized models to minimize VRAM/RAM footprint.
 - **Demand Loading**: Vision models are loaded only when screen-reading is requested.
 - **Virtual Memory Strategy**: Synchronized with a 12GB SSD Page File to ensure absolute stability during spikes.
-
----
 
 ---
 
@@ -261,8 +291,6 @@ DNA is engineered to run on modest hardware (e.g., Intel i3, 8GB RAM):
    - Start system tray icon
    - Listen for wake word (default: "Hey Jarvis")
    - Deliver morning briefing (weather, news, jobs)
-
----
 
 ---
 
