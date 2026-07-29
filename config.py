@@ -77,6 +77,12 @@ WAKE_WORD_THRESHOLD = float(os.getenv('WAKE_WORD_THRESHOLD', '0.5'))
 WAKE_WORD_FRAMEWORK = os.getenv('WAKE_WORD_FRAMEWORK', 'onnx')
 GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY', '')
 GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
+APIFY_API_KEY = os.getenv('APIFY_API_KEY', '')
+COMPOSIO_API_KEY = os.getenv('COMPOSIO_API_KEY', '')
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
+OPENROUTER_FALLBACK_MODEL = os.getenv('OPENROUTER_FALLBACK_MODEL', 'google/gemma-4-26b-a4b-it:free')
+APIFY_DAILY_LIMIT = int(os.getenv('APIFY_DAILY_LIMIT', '50'))
+COMPOSIO_DAILY_LIMIT = int(os.getenv('COMPOSIO_DAILY_LIMIT', '20'))
 CLOUD_LLM_MODEL = os.getenv('CLOUD_LLM_MODEL', 'gemini-3.5-flash-lite')
 OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'gemma4:e2b')
 OLLAMA_VISION_MODEL = os.getenv('OLLAMA_VISION_MODEL', 'moondream')
@@ -372,7 +378,7 @@ JOB_LOCATION       = "India"
 JOB_MAX_AGE_DAYS   = 7      # jobs posted in last 7 days
 JOB_RESULTS_DIR    = str(BASE_DIR / 'data' / 'job_results')
 JOB_EXPERIENCE_LEVEL = "fresher"       # entry-level only — excludes mid/senior
-JOBS_ON_STARTUP    = True     # check for new jobs every morning on startup
+JOBS_ON_STARTUP    = False    # check for new jobs every morning on startup (Set to False to prevent automatic Apify credit usage)
 
 # Data Engine Settings
 ANALYSIS_OUTPUT_DIR = BASE_DIR / 'data' / 'analysis_output'

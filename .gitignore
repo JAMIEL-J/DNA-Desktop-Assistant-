@@ -11,30 +11,49 @@ ENV/
 
 # Documentation & Spec Folders
 docs/
-docs/superpowers/specs/
 specs/
 
-# Scratch & Temporary Test Files (Outside of standard test folder)
+# Scratch & Temporary Test Files
 scratch/
 scratch_*.py
-test_*.py
-!tests/
 
-# Generated Data Outputs, Analysis Reports & Persistent DBs
+# Generated Data Outputs, Analysis Reports, Datasets & Persistent DBs
 data/db/
 data/analysis_output/
 data/superstore_e2e_output/
+data/job_results/
+data/screenshots/
+data/memory/corpus/conversations/
+data/memory/corpus/graphify-out/
+data/memory/.obsidian/
 data/*.db
 data/*.duckdb
+data/*.csv
+data/*.xlsx
 *.db
 *.duckdb
 *.sqlite
 *.sqlite3
+*.csv
+
+# UI Mockups & HTML Preview Templates (kept locally, excluded from git)
+ui/nexus_os_v2.html
+ui/agentos_terminal_demo.html
+ui/agentos.css
+ui/agentos.js
+ui/dist/
+dna_brainstorming_dashboard.html
+
+# Frontend build outputs (node_modules & dist)
+agentos---multi-agent-terminal-operating-system/node_modules/
+agentos---multi-agent-terminal-operating-system/dist/
 
 # Artifacts & Local Agent Metadata
 artifacts/
 .agent/
+.agents/
 .gemini/
+.claude/
 
 # Environment Variables & Configuration Secrets
 .env

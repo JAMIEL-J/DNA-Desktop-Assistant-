@@ -230,9 +230,7 @@ SIMPLE_INTENTS = [
     (re.compile(r'\bsearch\s+google\s+(?:for\s+)?(.+)', re.I), 'search_google', lambda m: {'query': _clean_arg(m.group(1))}),
     (re.compile(r'\bgoogle\s+(?:for\s+)?(.+)', re.I), 'search_google', lambda m: {'query': _clean_arg(m.group(1))}),
 
-    # --- JOB SEARCH MODE (triggers + role-specific) ---
-    (re.compile(r'\b(?:job\s+search\s+mode|start\s+job\s+search|jarvis\s+job\s+search)\b', re.I),
-     'enter_job_search_mode', lambda m: {}),
+    # --- JOB SEARCH (Natural Voice Commands) ---
     (re.compile(r'\b(?:job\s+search|search\s+jobs?)\s+(?:for\s+)?(?:data\s+analyst|analyst)\b', re.I),
      'enter_job_search_mode', lambda m: {'role': 'data analyst'}),
     (re.compile(r'\b(?:job\s+search|search\s+jobs?)\s+(?:for\s+)?(?:data\s+scien\w*|scientist)\b', re.I),
@@ -244,9 +242,9 @@ SIMPLE_INTENTS = [
     (re.compile(r'\b(?:job\s+search|search\s+jobs?)\s+(?:for\s+)?(?:ml|machine\s+learning)\b', re.I),
      'enter_job_search_mode', lambda m: {'role': 'ml engineer'}),
     # Role within generic phrasing (e.g. "find data analyst jobs")
-    (re.compile(r'\b(?:find|get|show)\s+(?:data\s+analyst|data\s+scientist|business\s+analyst|data\s+engineer|ml\s+engineer)\s+(?:jobs?|openings?|roles?)\b', re.I),
+    (re.compile(r'\b(?:find|get|show|look\s+for)\s+(?:data\s+analyst|data\s+scientist|business\s+analyst|data\s+engineer|ml\s+engineer)\s+(?:jobs?|openings?|roles?)\b', re.I),
      'enter_job_search_mode', lambda m: {'role': re.search(r'(data\s+analyst|data\s+scientist|business\s+analyst|data\s+engineer|ml\s+engineer)', m.group(0), re.I).group(1).lower()}),
-    # Generic job triggers (still enter mode)
+    # Generic job triggers via natural speech
     (re.compile(r'\b(?:show|find|get|check|are there|any)\b.+\b(?:jobs?|openings?|vacancies|hiring|positions?)\b', re.I),
      'enter_job_search_mode', lambda m: {}),
     (re.compile(r'\b(?:is there|are there).+(?:opening|job|hiring|vacancy)\b', re.I),
@@ -548,6 +546,17 @@ def _inject_context(user_command: str, skill_result: str, tool_name: str) -> Non
         logger.debug('Context injection skipped: %s', e)
 
 
+_nexus_instance = None
+
+def _get_nexus():
+    global _nexus_instance
+    if _nexus_instance is None:
+        from core.session import get_blackboard
+        from core.nexus import NexusOrchestrator
+        _nexus_instance = NexusOrchestrator(get_blackboard())
+    return _nexus_instance
+
+
 def route(command: str, allow_llm: bool = True) -> Optional[str]:
     """Route a voice command to the appropriate tool.
 
@@ -628,19 +637,17 @@ def route(command: str, allow_llm: bool = True) -> Optional[str]:
         pass
 
     # ── Step 1.9: Data analysis follow-up interceptor ──
-    # When a dataset is active in session and the user asks a data-related
-    # follow-up, route directly to the Data Engine (SQL) instead of Chat.
+    # Only intercept when explicitly targeting the active dataset or data query
     try:
         from core.session import get as session_get
         active_file = session_get('active_file')
         if active_file:
-            _DATA_FOLLOWUP_PATTERNS = [
-                re.compile(r'\b(?:which|who|what|how many|how much|show|list|find|get|average|max|min|top|bottom|highest|lowest|count|total|sum|mean|median)\b', re.I),
-                re.compile(r'\b(?:salary|age|name|column|row|data|value|number|amount|percentage|rate|price|cost|revenue|profit|score|rating)\b', re.I),
-                re.compile(r'\b(?:compare|group|sort|filter|between|greater|less|more|above|below|over|under)\b', re.I),
+            _EXPLICIT_DATA_PATTERNS = [
+                re.compile(r'\b(?:analyze|analyse|query|filter|group|sort|dataset|table|sql|csv|excel)\b', re.I),
+                re.compile(r'\b(?:what is|calculate|show|get)\s+(?:the\s+)?(?:salary|headcount|row|column|count|average|total|sum|max|min)\s+(?:in|of|from)\s+(?:the\s+)?(?:data|file|table|dataset)\b', re.I),
             ]
-            if any(p.search(cleaned) for p in _DATA_FOLLOWUP_PATTERNS):
-                logger.info('Data follow-up intercepted for active file: %s', active_file)
+            if any(p.search(cleaned) for p in _EXPLICIT_DATA_PATTERNS):
+                logger.info('Explicit data command matched for active file: %s', active_file)
                 from skills.data_engine import run_analysis
                 from core.session import update as session_update
                 session_update('active_skill', 'data')
@@ -654,6 +661,17 @@ def route(command: str, allow_llm: bool = True) -> Optional[str]:
     # Avoid LLM fallback for standalone confirm/cancel when no action is pending.
     if re.fullmatch(r'(?:confirm(?:\s+(?:lock|restart|shutdown))?|cancel|abort|never\s+mind)', cleaned):
         return humanize_response('There is no pending action to confirm right now.')
+
+    # ── Step 1.95: Gateway Classification ──
+    from pipeline.gateway_classifier import classify
+    category = classify(cleaned)
+    if category == 'B':
+        logger.info('Gateway classified command as Category B (reasoning). Direct to NEXUS.')
+        if not allow_llm:
+            return None
+        nexus = _get_nexus()
+        bb_msg = nexus.execute(cleaned)
+        return bb_msg.payload.get("result")
 
     # ── Step 2: Regex intent matching ──
     for pattern, tool_name, arg_extractor in SIMPLE_INTENTS:
@@ -708,9 +726,11 @@ def route(command: str, allow_llm: bool = True) -> Optional[str]:
                 return 'Sorry sir, I ran into a problem while executing that command.'
 
     # ── Step 3: LLM fallback ──
-    logger.info('No simple intent matched for: "%s"', cleaned)
+    logger.info('No simple intent matched for Category A command: "%s". Falling back to NEXUS.', cleaned)
     if not allow_llm:
         return None
 
-    logger.info('Falling back to LLM agent for: "%s"', cleaned)
-    return handle_complex_command(cleaned, get_tool_map())
+    nexus = _get_nexus()
+    bb_msg = nexus.execute(cleaned)
+    return bb_msg.payload.get("result")
+

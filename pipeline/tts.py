@@ -127,8 +127,8 @@ def _synthesize_to_float32(voice, text: str):
 
 
 def clean_text_for_tts(text: str) -> str:
-    """Strip out markdown formatting, emoji, and especially code blocks (e.g. ```sql ... ```)
-    so that the TTS engine only speaks natural language sentences."""
+    """Strip out markdown formatting, emoji, code blocks, and robotic punctuation pauses
+    so that the TTS engine speaks fluidly with natural human cadence."""
     if not text:
         return ""
     
@@ -150,7 +150,13 @@ def clean_text_for_tts(text: str) -> str:
     # 4. Clean up Markdown headers like ###, ##, #
     text = re.sub(r'^#+\s+', '', text, flags=re.M)
     
-    # 5. Clean up multiple spaces and empty lines
+    # 5. Smooth robotic punctuation: replace rigid dots/dashes/colons/commas around boss that cause robotic pauses
+    text = re.sub(r'[:;—\-\|]', ' ', text)
+    text = re.sub(r'\.{2,}', '.', text)
+    text = re.sub(r',\s*boss\b', ' boss', text, flags=re.I)
+    text = re.sub(r'\bboss,\s*', 'boss ', text, flags=re.I)
+    
+    # 6. Clean up multiple spaces and empty lines
     lines = []
     for line in text.splitlines():
         line_clean = line.strip()
@@ -163,7 +169,7 @@ def clean_text_for_tts(text: str) -> str:
 
 
 def speak(text: str) -> str:
-    """Convert text to speech and play it through the speakers using streaming.
+    """Convert text to speech and play it fluidly through speakers at 1.15x pace.
 
     Args:
         text: The text to speak aloud.
@@ -179,12 +185,16 @@ def speak(text: str) -> str:
         _tts_lock.set()
         session_update('is_speaking', True)
         voice = _get_synthesizer()
-        tts_sample_rate = voice.config.sample_rate
+        base_sample_rate = voice.config.sample_rate
 
-        logger.info('Speaking (streaming): "%s"', cleaned_text)
+        # 1.22x faster recitation speed (resampled sample rate for smooth natural speedup)
+        speed_factor = 1.05
+        playback_rate = int(base_sample_rate * speed_factor)
+
+        logger.info('Speaking (fluid 1.22x stream): "%s"', cleaned_text)
         
-        # Stream chunks directly to audio output as they form
-        with sd.OutputStream(samplerate=tts_sample_rate, channels=1, dtype='int16') as stream:
+        # Stream chunks directly to audio stream at 1.22x pacing
+        with sd.OutputStream(samplerate=playback_rate, channels=1, dtype='int16') as stream:
             for chunk in voice.synthesize(cleaned_text):
                 audio_int16 = np.frombuffer(chunk.audio_int16_bytes, dtype=np.int16)
                 stream.write(audio_int16)

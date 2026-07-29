@@ -43,6 +43,7 @@ class _WebSocketHub:
                     self._clients.discard(websocket)
 
         async def start_server() -> None:
+            # Simple HTTP + WS handler using Python's http server thread or asyncio static server
             self._server = await websockets.serve(handler, self._host, self._port)
             logger.info('WebSocket UI bridge listening on ws://%s:%s', self._host, self._port)
 
@@ -80,12 +81,56 @@ class AssistantWebWindow:
         self._last_active_skill = None
         self._proc_primed = False
         self._running = False
-        self._html_path = Path(__file__).resolve().parent / 'dna_ui.html'
+        self._html_path = Path(__file__).resolve().parent.parent / 'agentos---multi-agent-terminal-operating-system' / 'dist' / 'index.html'
 
     def start(self):
         self._running = True
-        logger.info('Opening DNA UI in default browser...')
-        webbrowser.open(f'file://{self._html_path.absolute()}')
+        dist_dir = Path(__file__).resolve().parent.parent / 'agentos---multi-agent-terminal-operating-system' / 'dist'
+        
+        # Start lightweight local HTTP server for dist assets
+        def _run_http():
+            import http.server
+            import socketserver
+            class Handler(http.server.SimpleHTTPRequestHandler):
+                def __init__(self, *args, **kwargs):
+                    super().__init__(*args, directory=str(dist_dir), **kwargs)
+                def log_message(self, format, *args):
+                    pass # suppress logs
+            
+            socketserver.TCPServer.allow_reuse_address = True
+            for port in [5173, 5174, 8080, 8000]:
+                try:
+                    with socketserver.TCPServer(('127.0.0.1', port), Handler) as httpd:
+                        logger.info('UI HTTP server listening on http://127.0.0.1:%d', port)
+                        httpd.serve_forever()
+                        break
+                except Exception as err:
+                    logger.debug('Port %d busy: %s', port, err)
+                    continue
+
+        self._http_thread = threading.Thread(target=_run_http, daemon=True)
+        self._http_thread.start()
+
+        target_url = 'http://127.0.0.1:5173'
+        
+        # Explicitly attempt Chrome launcher first
+        from config import APP_ALIASES
+        chrome_exe = APP_ALIASES.get('chrome')
+        opened = False
+        
+        if chrome_exe and Path(chrome_exe).exists():
+            try:
+                import subprocess
+                subprocess.Popen([chrome_exe, target_url])
+                opened = True
+            except Exception as e:
+                logger.warning('Direct Chrome subprocess launch failed: %s', e)
+
+        if not opened:
+            try:
+                webbrowser.get('google-chrome').open(target_url)
+            except Exception:
+                webbrowser.open(target_url)
         
         self._state_thread = threading.Thread(target=self._state_loop, daemon=True)
         self._metrics_thread = threading.Thread(target=self._metrics_loop, daemon=True)

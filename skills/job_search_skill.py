@@ -25,7 +25,6 @@ from config import (
     JOB_ROLES, JOB_LOCATION, JOB_MAX_AGE_DAYS,
     JOB_RESULTS_DIR, JOB_EXPERIENCE_LEVEL,
 )
-from skills.career_ops_skill import career_ops_scan, career_ops_evaluate
 from skills.job_search_scorer import HybridScorer
 from skills.job_search_dashboard import DashboardGenerator
 
@@ -34,14 +33,21 @@ logger = logging.getLogger('dna.skill.job_search')
 # ── Role Configuration ────────────────────────────────────────────────────────
 
 ROLE_QUERIES = {
-    "data analyst":     ["data analyst fresher India", "data analyst entry level India",
-                         "junior data analyst India", "data analyst 0-1 years India"],
-    "business analyst": ["business analyst fresher India", "junior business analyst India",
-                         "BA fresher India", "business analyst entry level India"],
-    "research analyst": ["research analyst fresher India", "junior research analyst India",
-                         "research analyst entry level India"],
-    "all":              ["data analyst fresher India", "junior data analyst India",
-                         "business analyst fresher India", "research analyst fresher India"],
+    "data analyst":      ["data analyst fresher India", "data analyst entry level India",
+                          "junior data analyst India", "data analyst 0-1 years India"],
+    "financial analyst": ["financial analyst fresher India", "finance analyst entry level India",
+                          "FP&A analyst fresher India", "financial planning analyst India"],
+    "sales analyst":     ["sales analyst fresher India", "sales operations analyst India",
+                          "commercial analyst fresher India"],
+    "marketing analyst": ["marketing analyst fresher India", "digital marketing analyst India",
+                          "growth analyst fresher India"],
+    "business analyst":  ["business analyst fresher India", "junior business analyst India",
+                          "BA fresher India", "business analyst entry level India"],
+    "research analyst":  ["research analyst fresher India", "junior research analyst India",
+                          "equity research analyst fresher India"],
+    "all":               ["data analyst fresher India", "financial analyst fresher India",
+                          "FP&A analyst India", "sales analyst fresher India",
+                          "marketing analyst fresher India", "business analyst fresher India"],
 }
 
 # Seniority blocklist — titles containing these are filtered out
@@ -131,7 +137,7 @@ def _deduplicate(jobs: list) -> list:
 # ── Fetchers ──────────────────────────────────────────────────────────────────
 
 def _fetch_indeed(query: str, days: int = 14) -> list:
-    """Fetch from Indeed India RSS."""
+    """Fetch direct from Indeed RSS feed for instant zero-quota results."""
     results = []
     url = (f"https://in.indeed.com/rss?"
            f"q={query.replace(' ', '+')}"
@@ -139,190 +145,146 @@ def _fetch_indeed(query: str, days: int = 14) -> list:
     try:
         feed = feedparser.parse(url)
         for entry in feed.entries:
-            title    = _clean_text(entry.get("title", ""))
-            company  = entry.get("author", "Unknown")
-            link     = entry.get("link", "")
-            location = entry.get("location", "South India")
+            title = _clean_text(entry.get("title", ""))
+            company = entry.get("author", "Unknown")
+            link = entry.get("link", "")
+            location = entry.get("location", "India")
             published = entry.get("published", "")
 
             if not title or not link:
                 continue
             if not _is_india(location):
                 continue
-            if not _is_entry_level(title):
-                continue
-            if not _is_recent(published, days):
-                continue
 
             # Strip company from title if present
-            title = re.sub(r'\s*-\s*' + re.escape(company) + r'$', '',
-                           title, flags=re.IGNORECASE).strip()
+            title = re.sub(r'\s*-\s*' + re.escape(company) + r'$', '', title, flags=re.IGNORECASE).strip()
 
             results.append({
-                "title":     title,
-                "company":   _clean_text(company),
-                "location":  location.split(",")[0].strip(),
-                "link":      link,
-                "source":    "Indeed",
+                "title": title,
+                "company": _clean_text(company),
+                "location": location.split(",")[0].strip(),
+                "link": link,
+                "source": "Indeed Direct RSS",
                 "published": published,
             })
     except Exception as e:
-        logger.debug('Indeed fetch failed: %s', e)
+        logger.warning("Indeed RSS fetch error: %s", e)
     return results
 
 
-def _fetch_internshala(role: str) -> list:
-    """Scrape Internshala fresher jobs."""
-    results = []
-    
-    # Use proper Internshala category slugs
-    if role == "data" or role == "all":
-        role_slug = "data-analytics"
-    elif role == "business analyst":
-        role_slug = "business-analytics"
-    else:
-        role_slug = role.lower().replace(" ", "-")
-        
-    # Query major Indian cities
-    cities = ["bangalore", "chennai", "hyderabad", "mumbai", "delhi", "pune", "kolkata"]
-    
-    for city in cities:
-        url = f"https://internshala.com/fresher-jobs/{role_slug}-jobs-in-{city}/"
+# ── Gemini Synthesis Layer ───────────────────────────────────────────────────
 
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            )
-        }
+def synthesize_job_results(raw_jobs: list[dict], candidate_profile: str = "Data Analyst focus, ML Analyst secondary") -> list[dict]:
+    """
+    Pipes raw job scrape results through the Gemini wrapper (_call_google in pipeline.llm_agent).
+    Filters out duplicates/irrelevant listings, scores fit against candidate profile,
+    and returns structured JSON sorted by fit_score descending.
+    Retries once on malformed JSON; fails gracefully to raw_jobs on error.
+    """
+    if not raw_jobs:
+        return []
 
-        try:
-            import requests
-            resp = requests.get(url, headers=headers, timeout=10)
-            if resp.status_code != 200:
-                continue
+    try:
+        import json
+        from pipeline.llm_agent import _call_google
 
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(resp.text, "html.parser")
+        prompt = f"""You are a professional Career & Job Matching Assistant.
+Candidate Profile Context: {candidate_profile}.
 
-            # Fetch up to 20 cards per city to keep request times reasonable
-            cards = soup.select(".individual_internship")[:20]
+Below is a raw list of job postings fetched from job boards:
+{json.dumps(raw_jobs, indent=2)}
 
-            for card in cards:
-                try:
-                    title_el   = card.select_one(".job-title-href, .profile")
-                    company_el = card.select_one(".company_name, .company-name")
-                    loc_el     = card.select_one(".locations, .location_names")
-                    link_el    = card.select_one("a.job-title-href, a[href*='/job/']")
+Tasks:
+1. Filter out irrelevant or non-entry-level listings.
+2. Score fit (0.0 to 10.0) based on how well the job aligns with a Data Analyst (primary) or ML/Business Analyst (secondary) entry-level profile.
+3. Return ONLY a valid JSON array of objects or object containing a 'jobs' array. Do not include markdown formatting or non-JSON text.
+Each object in the array MUST match this schema:
+[
+  {{
+    "title": "Clean Job Title",
+    "company": "Company Name",
+    "location": "City, State or Remote",
+    "apply_link": "https://...",
+    "fit_score": 9.2,
+    "one_line_reason": "Clear one line reason explaining why this fits"
+  }}
+]
+"""
+        # Execute via existing Gemini client wrapper
+        for attempt in range(2):
+            try:
+                response = _call_google(prompt, tool_names=[])
+                synthesized = []
+                if isinstance(response, list):
+                    synthesized = response
+                elif isinstance(response, dict):
+                    if "jobs" in response and isinstance(response["jobs"], list):
+                        synthesized = response["jobs"]
+                    elif "raw" in response and isinstance(response["raw"], str):
+                        raw_str = response["raw"]
+                        raw_str = re.sub(r'^```json\s*', '', raw_str, flags=re.MULTILINE)
+                        raw_str = re.sub(r'```$', '', raw_str, flags=re.MULTILINE).strip()
+                        parsed = json.loads(raw_str)
+                        if isinstance(parsed, list):
+                            synthesized = parsed
+                        elif isinstance(parsed, dict) and "jobs" in parsed and isinstance(parsed["jobs"], list):
+                            synthesized = parsed["jobs"]
 
-                    title   = _clean_text(title_el.text) if title_el else ""
-                    company = _clean_text(company_el.text) if company_el else "Unknown"
-                    loc     = _clean_text(loc_el.text) if loc_el else city.title()
-                    href    = link_el.get("href", "") if link_el else ""
-                    link    = f"https://internshala.com{href}" if href.startswith("/") else href
-
-                    if title and link:
-                        results.append({
-                            "title":     title,
-                            "company":   company,
-                            "location":  loc.split(",")[0].strip(),
-                            "link":      link,
-                            "source":    "Internshala",
-                            "published": datetime.now().isoformat(),
+                if isinstance(synthesized, list) and len(synthesized) > 0:
+                    # Sort by fit_score descending
+                    synthesized.sort(key=lambda x: float(x.get("fit_score", 0)), reverse=True)
+                    # Convert to standard job dict format
+                    result = []
+                    for item in synthesized:
+                        result.append({
+                            "title": str(item.get("title", "")),
+                            "company": str(item.get("company", "Unknown")),
+                            "location": str(item.get("location", "India")),
+                            "link": str(item.get("apply_link", item.get("link", ""))),
+                            "fit_score": float(item.get("fit_score", 5.0)),
+                            "one_line_reason": str(item.get("one_line_reason", "")),
+                            "source": "Gemini Synthesized Job",
+                            "published": datetime.now().isoformat()
                         })
-                except Exception:
-                    continue
-        except ImportError:
-            logger.warning('beautifulsoup4 not installed. Internshala scraping disabled.')
-            break
-        except Exception as e:
-            logger.debug('Internshala fetch failed for %s: %s', city, e)
+                    return result
+            except Exception as parse_err:
+                logger.warning("Gemini synthesis JSON parse attempt %d failed: %s", attempt + 1, parse_err)
 
-    return results
+        logger.info("Gemini synthesis completed fallback: returning structured raw jobs.")
+        return raw_jobs
+
+    except Exception as e:
+        logger.error("Gemini synthesis layer error: %s", e)
+        return raw_jobs
 
 
 # ── Core Search ───────────────────────────────────────────────────────────────
 
-def _run_search(role: str = "all") -> list:
-    """Run full search for a role. Returns deduplicated sorted list."""
-    # 1. Use Career-Ops High-Fidelity Scanner first
-    logger.info('Invoking Career-Ops portal scan for role: %s', role)
-    career_ops_scan()
+def _run_search(role: str = "all", dry_run: bool = False) -> list:
+    """Run search using direct Indeed RSS feeds + Apify direct SDK and Gemini synthesis layer."""
+    from skills.apify_job_skill import scrape_jobs
 
     queries = ROLE_QUERIES.get(role.lower(), ROLE_QUERIES["all"])
-    all_jobs = []
+    raw_jobs = []
 
-    for query in queries[:3]:  # limit to 3 queries to avoid rate limiting
-        all_jobs += _fetch_indeed(query, days=JOB_MAX_AGE_DAYS)
-        time.sleep(0.3)  # polite delay
+    # 1. Direct Indeed RSS feed (fast, direct, no quota)
+    for q in queries[:2]:
+        raw_jobs += _fetch_indeed(q, days=JOB_MAX_AGE_DAYS)
 
-    # 2. Append Career-Ops Scanned Jobs (Company Portals)
-    from config import CAREER_OPS_DIR
-    scan_history_path = Path(CAREER_OPS_DIR) / 'data' / 'scan-history.tsv'
-    if scan_history_path.exists():
-        try:
-            with open(scan_history_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()[1:] # skip header
-                for line in lines:
-                    parts = line.strip().split('\t')
-                    if len(parts) >= 5:
-                        url, first_seen, portal, title, company = parts[:5]
-                        all_jobs.append({
-                            "title": title,
-                            "company": company,
-                            "location": f"Remote / {portal}",
-                            "link": url,
-                            "source": "Company Portal",
-                            "published": first_seen
-                        })
-        except Exception as e:
-            logger.error("Failed to parse Career-Ops scan history: %s", e)
+    # 2. Apify direct SDK (Naukri scraper)
+    for query in queries[:2]:
+        raw_jobs += scrape_jobs(query=query, location="India", max_items=10, dry_run=dry_run)
 
-    # Internshala scrape
-    # Internshala: fetch analyst roles
-    internshala_role = role if role != "all" else "data"
-    all_jobs += _fetch_internshala(internshala_role)
-    if role == "all":
-        all_jobs += _fetch_internshala("business analyst")
+    if not raw_jobs:
+        return []
 
-    # ── Hybrid Scoring Pipeline ──
-    scorer = HybridScorer()
+    # 3. Deduplicate before synthesis
+    raw_jobs = _deduplicate(raw_jobs)
 
-    # 1. Recency filter (7-day limit, adds is_new flag)
-    filtered_jobs = scorer.filter_recency(all_jobs)
-
-    # 2. Tiering (High, Medium, Low)
-    tiered_jobs = scorer.tier_jobs(filtered_jobs)
-
-    # 3. Selection for LLM Deep Dive (Top 20 High Tier)
-    deep_dive_selection = scorer.select_for_deep_dive(tiered_jobs)
-
-    # 4. Run LLM Deep Dive (Scores, Archetypes, Insights)
-    deep_dive_results = scorer.run_deep_dive(deep_dive_selection)
-
-    # 5. Merge deep dive results back into the main list
-    # Use link as unique key for merging
-    final_jobs = []
-    deep_dive_map = {j['link']: j for j in deep_dive_results}
-
-    for job in tiered_jobs:
-        link = job.get('link')
-        if link in deep_dive_map:
-            final_jobs.append(deep_dive_map[link])
-        else:
-            final_jobs.append(job)
-
-    # Deduplicate and sort by recency (Internshala first since fresher-focused)
-    unique = _deduplicate(final_jobs)
-    internshala = [j for j in unique if j["source"] == "Internshala"]
-    indeed      = [j for j in unique if j["source"] == "Indeed"]
-    company     = [j for j in unique if j["source"] == "Company Portal"]
-
-    logger.info('Job search for "%s": %d Indeed + %d Internshala + %d Company Portals = %d unique',
-                role, len(indeed), len(internshala), len(company), len(unique))
-
-    return internshala + company + indeed   # Prioritize fresher jobs, then direct portals, then Indeed
+    # 4. Pipe raw jobs through Gemini synthesis layer
+    synthesized_jobs = synthesize_job_results(raw_jobs)
+    unique = _deduplicate(synthesized_jobs)
+    return unique
 
 
 def _save_to_csv(jobs: list, role: str) -> str:
@@ -342,6 +304,28 @@ def _save_to_csv(jobs: list, role: str) -> str:
 
     logger.info('Saved %d jobs to %s', len(jobs), path)
     return path
+
+
+def _save_to_excel(jobs: list, role: str) -> str:
+    """Save job results to Excel (.xlsx) file. Returns file path."""
+    try:
+        import pandas as pd
+        os.makedirs(JOB_RESULTS_DIR, exist_ok=True)
+        date_str  = datetime.now().strftime("%Y-%m-%d")
+        role_slug = role.replace(" ", "_")
+        excel_path = os.path.join(JOB_RESULTS_DIR, f"jobs_{role_slug}_{date_str}.xlsx")
+
+        df = pd.DataFrame(jobs)
+        # Select and reorder clean columns
+        cols = [c for c in ["title", "company", "location", "link", "source", "published"] if c in df.columns]
+        df = df[cols]
+
+        df.to_excel(excel_path, index=False, engine="openpyxl")
+        logger.info('Saved %d jobs to Excel at %s', len(jobs), excel_path)
+        return excel_path
+    except Exception as e:
+        logger.error('Failed to export jobs to Excel: %s', e)
+        return ""
 
 
 def _speak_jobs(jobs: list, start: int = 0, count: int = 5) -> str:
@@ -366,20 +350,6 @@ def _speak_jobs(jobs: list, start: int = 0, count: int = 5) -> str:
 
 # ── Session Tools ─────────────────────────────────────────────────────────────
 
-def evaluate_current_job() -> str:
-    """Evaluate the currently open job in the search session using Career-Ops A-F scoring."""
-    if not _search_session["active"] or not _search_session["results"]:
-        return "No active job search. Say job search mode to start."
-
-    idx = _search_session["current_index"]
-    if idx >= len(_search_session["results"]):
-        return "No job selected to evaluate."
-
-    job = _search_session["results"][idx]
-    link = job["link"]
-
-    return f"Evaluating {job['title']} at {job['company']}...\n\n{career_ops_evaluate(link)}"
-
 def enter_job_search_mode(role: str = "all") -> str:
     """
     Enter job search mode. Fetch results and speak first 5.
@@ -401,31 +371,14 @@ def enter_job_search_mode(role: str = "all") -> str:
         return (f"Could not find any {role_label} openings right now. "
                 "Try again later or say open job portals to browse manually.")
 
-    # Save to CSV silently
-    csv_path = _save_to_csv(jobs, role)
+    # Save exclusively to Excel
+    excel_path = _save_to_excel(jobs, role)
+    excel_msg = f" Full list saved to Excel spreadsheet ({Path(excel_path).name})." if excel_path else ""
 
-    # Generate and open Visual Dashboard
-    try:
-        generator = DashboardGenerator()
-        html_content = generator.generate(jobs)
-
-        date_str = datetime.now().strftime("%Y-%m-%d")
-        dashboard_path = os.path.join(JOB_RESULTS_DIR, f"jobs_dashboard_{date_str}.html")
-
-        with open(dashboard_path, "w", encoding="utf-8") as f:
-            f.write(html_content)
-
-        webbrowser.open(f"file://{os.path.abspath(dashboard_path)}")
-        dashboard_msg = f" Visual Dashboard opened in browser."
-    except Exception as e:
-        logger.error(f"Failed to generate dashboard: {e}")
-        dashboard_msg = ""
-
-    result  = f"Entering high-fidelity job search mode (powered by Career-Ops). Searching for {role_label} entry-level roles across India. "
+    result  = f"Entering high-fidelity job search mode. Searching for {role_label} entry-level roles across India. "
     result += f"Found {len(jobs)} entry-level openings. "
     result += _speak_jobs(jobs, 0, 5)
-    result += f" Full list saved to {Path(csv_path).name} and{dashboard_msg}"
-
+    result += excel_msg
 
     return result
 
@@ -553,10 +506,10 @@ def morning_job_check() -> str:
     Called on startup, not on demand.
     """
     try:
+        from skills.apify_job_skill import scrape_jobs
         jobs = []
         for query in ["data analyst fresher", "business analyst fresher"]:
-            fetched = _fetch_indeed(query=query, days=1)
-            # Apply entry-level filter to morning check too
+            fetched = scrape_jobs(query=query, location="India", max_items=5)
             fetched = [j for j in fetched if _is_entry_level(j.get('title', ''))]
             jobs += fetched
         jobs = list({j["link"]: j for j in jobs}.values())  # deduplicate
@@ -576,16 +529,26 @@ def morning_job_check() -> str:
         return ""  # always silent on startup failure
 
 
+from skills.composio_job_skill import (
+    preview_application_email,
+    preview_log_sheet,
+    confirm_composio_action,
+    cancel_composio_action
+)
+
 # ── Skill Contract ────────────────────────────────────────────────────────────
 
 TOOLS = {
-    "enter_job_search_mode": enter_job_search_mode,
-    "next_jobs":             next_jobs,
-    "previous_jobs":         previous_jobs,
-    "open_job":              open_job,
-    "save_job":              save_job,
-    "search_role":           search_role,
-    "open_job_portals":      open_job_portals,
-    "exit_job_search":       exit_job_search,
-    "evaluate_current_job":  evaluate_current_job,
+    "enter_job_search_mode":     enter_job_search_mode,
+    "next_jobs":                 next_jobs,
+    "previous_jobs":             previous_jobs,
+    "open_job":                  open_job,
+    "save_job":                  save_job,
+    "search_role":               search_role,
+    "open_job_portals":          open_job_portals,
+    "exit_job_search":           exit_job_search,
+    "preview_application_email": preview_application_email,
+    "preview_log_sheet":         preview_log_sheet,
+    "confirm_composio_action":   confirm_composio_action,
+    "cancel_composio_action":    cancel_composio_action,
 }

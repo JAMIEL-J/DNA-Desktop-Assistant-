@@ -11,12 +11,15 @@ class HybridScorer:
         # Focused on analyst roles only (entry-level)
         self.keyword_map = {
             "High": [
-                r"\bdata analyst\b", r"\bresearch analyst\b", r"\bbusiness analyst\b",
+                r"\bdata analyst\b", r"\bresearch analyst\b",
                 r"\bjunior data analyst\b", r"\bjunior analyst\b",
                 r"\bBI analyst\b", r"\bbusiness intelligence analyst\b",
+                r"\bfinancial analyst\b", r"\bfinance analyst\b", r"\bFP&A analyst\b",
+                r"\bfinancial planning\b", r"\bsales analyst\b", r"\bmarketing analyst\b",
+                r"\bgrowth analyst\b", r"\bAI Engineer\b", r"\bML Engineer\b",
             ],
             "Medium": [
-                r"\bdata\b", r"\banalyst\b", r"\bfresher\b", r"\bentry level\b",
+                r"\bbusiness analyst\b", r"\bdata\b", r"\banalyst\b", r"\bfresher\b", r"\bentry level\b",
                 r"\bjunior\b", r"\bintern\b", r"\btrainee\b",
             ],
             "Low": [] # Default tier

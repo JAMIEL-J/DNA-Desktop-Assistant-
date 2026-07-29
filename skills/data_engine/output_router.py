@@ -18,7 +18,7 @@ class OutputRouter:
         'deep analysis', 'deep analyze', 'deep analyse', 'deep profile',
         'dashboard', 'create dashboard', 'generate dashboard', 'build dashboard',
         'full report', 'deep report', 'generate report', 'build report', 'full analysis',
-        'deep dive', 'full investigation', 'executive report'
+        'deep dive', 'full investigation', 'executive report', 'analyze why', 'analyse why'
     ]
     EXPORT_KEYWORDS = [
         'export', 'save', 'download', 'to csv', 'to excel'

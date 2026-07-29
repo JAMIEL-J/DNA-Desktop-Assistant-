@@ -125,20 +125,17 @@ def _assistant_loop() -> None:
     session_update('assistant_state', 'active')
     session_update('is_listening', True)
 
-    # Startup should keep the loyal aide tone from the first line.
-    speak('DNA is online.')
-
-    # ── Unified morning briefing (greeting + weather + news + jobs + suggestion) ──
+    # Startup announcement from Orchestrator NEXUS
     try:
         from core.morning_briefing import build_morning_briefing
         briefing = build_morning_briefing()
         if briefing:
             speak(briefing)
+        else:
+            speak("Hello boss. All agents are loaded, currently idle, and ready for something to cook.")
     except Exception as e:
         logger.error('Morning briefing failed, falling back: %s', e)
-        # Fallback to basic greeting if briefing engine fails
-        from core.personality import get_wake_greeting
-        speak(get_wake_greeting())
+        speak("Hello boss. All agents are loaded, currently idle, and ready for something to cook.")
 
 
     # ── Window monitor (proactive context awareness) ──
