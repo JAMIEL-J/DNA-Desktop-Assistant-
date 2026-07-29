@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+:root {
+  --font-sans: 'Google Sans', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --bg-dark: #050505;
+  --bg-surface: #0b0b0b;
+  --bg-header: #111111;
+  --border-dim: #1a1a1a;
+  --text-dim: #555555;
+  --text-main: #d1d1d1;
+  --blue: #4d96ff;
+  --purple: #b983ff;
+  --orange: #ff9f45;
+  --green: #7dce13;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-dark);
+  color: var(--text-main);
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-sans {
+  font-family: var(--font-sans);
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+/* Sophisticated Dark Grid Background */
+.grid-bg {
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Custom Scrollbars for Tiling Windows & Consoles */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: #050505;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1a1a1a;
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2e2e2e;
+}

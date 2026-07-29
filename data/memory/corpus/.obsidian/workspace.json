@@ -230,7 +230,8 @@
   },
   "active": "0d0f0af40fb680b4",
   "lastOpenFiles": [
-    "graphify-out/persistent_memory.md",
-    "graphify-out/dna_upgrade_architecture_graph.md"
+    "persistent_memory.md",
+    "graphify-out/dna_upgrade_architecture_graph.md",
+    "graphify-out/persistent_memory.md"
   ]
 }

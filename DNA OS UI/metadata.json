@@ -1,0 +1,6 @@
+{
+  "name": "AgentOS - Multi-Agent Terminal Operating System",
+  "description": "Developer-grade command center for executing and supervising autonomous AI agents with real-time terminal streaming, tiling window manager, process tree, and system telemetry.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
