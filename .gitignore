@@ -30,9 +30,7 @@ data/analysis_output/
 data/superstore_e2e_output/
 data/job_results/
 data/screenshots/
-data/memory/corpus/conversations/
-data/memory/corpus/graphify-out/
-data/memory/.obsidian/
+data/memory/
 data/*.db
 data/*.duckdb
 data/*.csv

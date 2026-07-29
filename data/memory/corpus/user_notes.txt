@@ -1,4 +1,0 @@
-User Preference: The user prefers Python for scripting and coding.
-User System: The DNA Desktop Assistant runs on a Windows operating system.
-User IDE: VS Code is the preferred text editor.
-User Focus: The current project is the DNA Desktop Assistant.
