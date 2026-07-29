@@ -13,9 +13,16 @@ ENV/
 docs/
 specs/
 
-# Scratch & Temporary Test Files
+# Scratch & Temporary Test Files & Folders
 scratch/
 scratch_*.py
+tests/
+test_*.py
+
+# Assistant Guidelines & Skill Lock Files
+CLAUDE.md
+SKILL.md
+skills-lock.json
 
 # Generated Data Outputs, Analysis Reports, Datasets & Persistent DBs
 data/db/
