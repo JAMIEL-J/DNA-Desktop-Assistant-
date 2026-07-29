@@ -13,6 +13,15 @@ CATEGORY_A_PATTERNS = [
 
 def classify(command: str) -> str:
     """Returns 'A' (deterministic) or 'B' (reasoning/LLM)."""
+    if not command:
+        return 'B'
+    cmd_lower = command.lower()
+    
+    # Direct agent commands (e.g. "hello hermes", "cipher run job search", "status of all agents") MUST go to Category B (NEXUS)
+    agent_names = ['nexus', 'cipher', 'forge', 'argus', 'hermes', 'titan', 'vanguard', 'jarvis']
+    if any(agent in cmd_lower for agent in agent_names) or 'status' in cmd_lower or 'agents' in cmd_lower or 'report' in cmd_lower:
+        return 'B'
+
     for pattern in CATEGORY_A_PATTERNS:
         if pattern.search(command):
             return 'A'

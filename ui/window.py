@@ -81,11 +81,11 @@ class AssistantWebWindow:
         self._last_active_skill = None
         self._proc_primed = False
         self._running = False
-        self._html_path = Path(__file__).resolve().parent.parent / 'agentos---multi-agent-terminal-operating-system' / 'dist' / 'index.html'
+        self._html_path = Path(__file__).resolve().parent.parent / 'DNA OS UI' / 'dist' / 'index.html'
 
     def start(self):
         self._running = True
-        dist_dir = Path(__file__).resolve().parent.parent / 'agentos---multi-agent-terminal-operating-system' / 'dist'
+        dist_dir = Path(__file__).resolve().parent.parent / 'DNA OS UI' / 'dist'
         
         # Start lightweight local HTTP server for dist assets
         def _run_http():

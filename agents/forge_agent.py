@@ -14,7 +14,7 @@ logger = logging.getLogger('dna.agent.forge')
 class ForgeAgent(AgentBase):
     """FORGE — Career & Resume Agent.
     
-    Model Assignment: MiniMax M2.7 (via NVIDIA NIM).
+    Model Assignment: Gemini 3.5 Flash-Lite.
     Responsibilities: Resume matching, job scraping, skill gap evaluation.
     """
     def __init__(self, blackboard: Blackboard):

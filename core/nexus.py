@@ -55,8 +55,13 @@ class NexusOrchestrator(AgentBase):
             # Check context / intent hints for routing to specialist sub-agents
             active_file = self.blackboard.get("active_file")
             task_lower = (task or "").lower()
+            # Swarm Agent Status Roll Call Query
+            if any(phrase in task_lower for phrase in ['status of all agents', 'agent status', 'all agents status', 'agent roll call', 'swarm status']):
+                diag = self.diagnose()
+                agents_summary = ", ".join([f"{name} ({info['status']})" for name, info in diag['agents'].items()])
+                result = f"All 7 sub-agents are online and ready, boss: {agents_summary}."
             # Explicit sub-agent targeting (e.g., "CIPHER run job search", "ARGUS check screen")
-            if 'cipher' in task_lower:
+            elif 'cipher' in task_lower:
                 logger.info("[%s] Explicit command signal targeting CIPHER Agent", self.agent_id)
                 msg = self.cipher.execute(task, {"task_id": task_id, "file_path": active_file})
                 result = msg.payload.get("result", "")

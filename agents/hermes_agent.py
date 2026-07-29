@@ -14,8 +14,8 @@ logger = logging.getLogger('dna.agent.hermes')
 class HermesAgent(AgentBase):
     """HERMES — Web & Browser Agent.
     
-    Model Assignment: Gemini 3.5 Flash-Lite.
-    Responsibilities: Web searches, page scraping, online intelligence.
+    Model Assignment: NVIDIA Nemotron (Secondary API Key — Tool Calling Specialist).
+    Responsibilities: Web searches, page scraping, tool calling, online intelligence.
     """
     def __init__(self, blackboard: Blackboard):
         super().__init__("HERMES", blackboard)
@@ -33,13 +33,17 @@ class HermesAgent(AgentBase):
         logger.info("[%s] Processing web task: %r", self.agent_id, task)
 
         try:
-            url = (context or {}).get("url")
-            if url and fetch_and_summarize:
-                result = fetch_and_summarize(url)
-            elif web_search:
-                result = web_search(task)
+            task_lower = (task or "").lower()
+            if any(greeting in task_lower for greeting in ['hello', 'hi', 'hey', 'status', 'who are you']) and len(task.split()) <= 4:
+                result = "Hello boss! HERMES web agent online and ready for search or web intelligence tasks."
             else:
-                result = "Web search skills are currently unavailable."
+                url = (context or {}).get("url")
+                if url and fetch_and_summarize:
+                    result = fetch_and_summarize(url)
+                elif web_search:
+                    result = web_search(task)
+                else:
+                    result = "Web search skills are currently unavailable."
 
             latency_ms = int((time.perf_counter() - start_time) * 1000)
             payload = {
