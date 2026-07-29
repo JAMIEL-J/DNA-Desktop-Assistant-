@@ -12,6 +12,7 @@ ENV/
 # Documentation & Spec Folders
 docs/
 specs/
+DNA_STATUS.md
 
 # Scratch & Temporary Test Files & Folders
 scratch/
