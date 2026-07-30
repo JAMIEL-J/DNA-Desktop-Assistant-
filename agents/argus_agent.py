@@ -31,17 +31,23 @@ class ArgusAgent(AgentBase):
         start_time = time.perf_counter()
 
         logger.info("[%s] Processing vision task: %r", self.agent_id, task)
+        self.log_event(f"Processing screen vision task: '{task}'", "info")
 
         try:
             task_lower = task.lower()
             if "error" in task_lower and find_error:
+                self.log_event("Scanning screen for visual errors...", "info")
                 result = find_error()
             elif "describe" in task_lower and describe_screen:
+                self.log_event("Capturing and describing desktop screen...", "info")
                 result = describe_screen()
             elif read_screen:
+                self.log_event("Reading text from active screen...", "info")
                 result = read_screen()
             else:
                 result = "Screen vision skills are unavailable in current environment."
+
+            self.log_event(f"Vision analysis completed: {result[:100]}...", "success")
 
             latency_ms = int((time.perf_counter() - start_time) * 1000)
             payload = {

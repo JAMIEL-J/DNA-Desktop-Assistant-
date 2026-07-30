@@ -17,7 +17,15 @@ def resolve_pronouns(command: str) -> str:
     active_app = get('active_app')
     active_file = get('active_file')
     
-    if not active_app and not active_file:
+    # Check Blackboard if no active app/file is set
+    bb_history = []
+    try:
+        from core.blackboard import get_global_blackboard
+        bb_history = get_global_blackboard().get_recent_history(1)
+    except Exception:
+        pass
+
+    if not active_app and not active_file and not bb_history:
         return command
 
     resolved_command = command
@@ -51,12 +59,22 @@ def resolve_pronouns(command: str) -> str:
             target = active_app
         elif is_file_context and active_file:
             target = active_file
-        else:
-            # Fallbacks
-            if active_app:
-                target = active_app
-            elif active_file:
+        
+        if not target:
+            # Fallbacks: check active_file, active_app, or last sub-agent output from Blackboard
+            if active_file:
                 target = active_file
+            elif active_app:
+                target = active_app
+            else:
+                try:
+                    from core.blackboard import get_global_blackboard
+                    bb = get_global_blackboard()
+                    history = bb.get_recent_history(1)
+                    if history:
+                        target = f"the recent {history[0].get('agent_id')} result ({history[0].get('result')})"
+                except Exception:
+                    pass
 
         if target:
             # Target is substituted once (or at most for the first match of each ambiguous pronoun)

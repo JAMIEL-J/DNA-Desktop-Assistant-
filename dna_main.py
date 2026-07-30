@@ -234,7 +234,7 @@ def _assistant_loop() -> None:
                             text = _normalize_transcript(f'{text} {follow_text}')
 
                 if _looks_incomplete_command(text):
-                    speak('Please continue, sir.')
+                    speak('Please continue, boss.')
                     continue
 
                 logger.info('Command: "%s"', text)

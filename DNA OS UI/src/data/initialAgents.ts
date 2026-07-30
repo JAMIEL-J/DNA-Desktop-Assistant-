@@ -13,7 +13,7 @@ export const INITIAL_AGENTS: AgentProcess[] = [
   {
     id: 'agent-nexus-01',
     pid: 9001,
-    name: 'NEXUS',
+    name: 'JARVIS',
     role: 'Planner',
     color: 'text-purple-400',
     borderHex: '#a855f7',
@@ -28,12 +28,12 @@ export const INITIAL_AGENTS: AgentProcess[] = [
     isFloating: false,
     isPinned: true,
     logs: [
-      { id: 'log-n-1', timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }), message: 'NEXUS Orchestrator online. Connected to Blackboard & OpenRouter API.', level: 'system' },
-      { id: 'log-n-2', timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }), message: 'API Status: READY (Google Gemma 4 26B). Awaiting user directive...', level: 'info' }
+      { id: 'log-n-1', timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }), message: 'JARVIS Orchestrator online. Connected to Blackboard & Gemini API.', level: 'system' },
+      { id: 'log-n-2', timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }), message: 'API Status: READY (Google Gemini 3.5 Flash Lite). Awaiting user directive...', level: 'info' }
     ],
     timeline: [],
     memory: [
-      { id: 'mem-n-1', key: 'active_orchestrator', value: 'NEXUS', type: 'state', updatedAt: 'READY', sizeBytes: 128 },
+      { id: 'mem-n-1', key: 'active_orchestrator', value: 'JARVIS', type: 'state', updatedAt: 'READY', sizeBytes: 128 },
     ],
     files: [],
     conversations: [],
@@ -47,7 +47,7 @@ export const INITIAL_AGENTS: AgentProcess[] = [
       dependencies: ['OpenRouter API', 'Blackboard'],
       confidenceScore: 100.0,
       executionDurationMs: 0,
-      modelUsed: 'google/gemma-4-26b-a4b-it:free',
+      modelUsed: 'gemini-3.5-flash-lite',
       tokensConsumed: 0
     },
     metricsHistory: {
@@ -77,7 +77,7 @@ export const INITIAL_AGENTS: AgentProcess[] = [
     isPinned: true,
     logs: [
       { id: 'log-c-1', timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }), message: 'CIPHER Data Engine online. Apify SDK & Excel exporter ready.', level: 'system' },
-      { id: 'log-c-2', timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }), message: 'Status: IDLE / Awaiting job search prompt...', level: 'info' }
+      { id: 'log-c-2', timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }), message: 'API Status: READY (Google Gemini 3.5 Flash Lite). Awaiting user directive...', level: 'info' }
     ],
     timeline: [],
     memory: [],
@@ -93,7 +93,7 @@ export const INITIAL_AGENTS: AgentProcess[] = [
       dependencies: ['Apify SDK', 'pandas'],
       confidenceScore: 100.0,
       executionDurationMs: 0,
-      modelUsed: 'google/gemma-4-26b-a4b-it:free',
+      modelUsed: 'gemini-3.5-flash-lite',
       tokensConsumed: 0
     },
     metricsHistory: {

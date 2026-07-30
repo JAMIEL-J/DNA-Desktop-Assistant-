@@ -21,7 +21,8 @@ export const generateInitialTelemetry = (): SystemTelemetry => ({
 });
 
 export const getUpdatedTelemetry = (prev: SystemTelemetry): SystemTelemetry => {
-  const nextCpuCores = prev.cpuCores.map((c) => {
+  const cores = prev.cpuCores || [28.4, 45.1, 19.8, 62.0, 14.5, 38.2, 51.0, 22.4];
+  const nextCpuCores = cores.map((c) => {
     const jitter = (Math.random() - 0.48) * 8;
     return Math.min(99, Math.max(4, Math.round((c + jitter) * 10) / 10));
   });

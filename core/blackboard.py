@@ -35,3 +35,34 @@ class Blackboard:
     def snapshot(self) -> dict:
         """Returns compact state dict (~100 tokens) for orchestrator context."""
         return dict(self._state)
+
+    def get_recent_history(self, limit: int = 5) -> List[dict]:
+        """Returns formatted recent sub-agent execution outputs for LLM prompt context."""
+        with self._lock:
+            recent_msgs = self._history[-limit:]
+            formatted = []
+            for msg in recent_msgs:
+                res_str = ""
+                if isinstance(msg.payload, dict):
+                    res_str = str(msg.payload.get("result") or msg.payload.get("error") or msg.payload)
+                else:
+                    res_str = str(msg.payload)
+
+                # Cap individual message snippet length to avoid blowing prompt context
+                if len(res_str) > 300:
+                    res_str = res_str[:300] + "..."
+
+                formatted.append({
+                    "agent_id": msg.agent_id,
+                    "action": msg.action,
+                    "result": res_str,
+                    "timestamp": msg.timestamp
+                })
+            return formatted
+
+# Global singleton Blackboard instance for cross-module skill access
+_GLOBAL_BLACKBOARD = Blackboard()
+
+def get_global_blackboard() -> Blackboard:
+    """Returns the shared global Blackboard instance."""
+    return _GLOBAL_BLACKBOARD

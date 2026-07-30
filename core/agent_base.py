@@ -34,3 +34,21 @@ class AgentBase(ABC):
     def transition(self, new_state: AgentState) -> None:
         """Transition agent to a new lifecycle state."""
         self.state = new_state
+
+    def log_event(self, message: str, level: str = 'info') -> None:
+        """Log event to python logger and broadcast to UI terminal for this specific agent."""
+        import logging
+        logger = logging.getLogger(f'dna.agent.{self.agent_id.lower()}')
+        if level == 'error':
+            logger.error(message)
+        elif level == 'warning':
+            logger.warning(message)
+        else:
+            logger.info(message)
+
+        try:
+            from ui.window import broadcast_agent_log
+            broadcast_agent_log(self.name, message, level)
+        except Exception:
+            pass
+

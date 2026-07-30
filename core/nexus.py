@@ -20,7 +20,10 @@ from agents.forge_agent import ForgeAgent
 logger = logging.getLogger('dna.nexus')
 
 class NexusOrchestrator(AgentBase):
-    def __init__(self, blackboard: Blackboard):
+    def __init__(self, blackboard: Blackboard = None):
+        if blackboard is None:
+            from core.blackboard import get_global_blackboard
+            blackboard = get_global_blackboard()
         super().__init__("NEXUS", blackboard)
         self.state = AgentState.READY
         # Register Specialist Agents
@@ -61,45 +64,98 @@ class NexusOrchestrator(AgentBase):
                 agents_summary = ", ".join([f"{name} ({info['status']})" for name, info in diag['agents'].items()])
                 result = f"All 7 sub-agents are online and ready, boss: {agents_summary}."
             # Explicit sub-agent targeting (e.g., "CIPHER run job search", "ARGUS check screen")
-            elif 'cipher' in task_lower:
+            # Require actionable words unless it's a greeting/status check
+            words = set(task_lower.split())
+            action_keywords = {'run', 'execute', 'search', 'analyze', 'check', 'start', 'fetch', 'scan', 'do', 'get', 'process', 'find', 'look', 'open'}
+            has_action = bool(words & action_keywords)
+            is_greeting = any(g in task_lower for g in ['hello', 'hi', 'hey', 'status', 'who are you', 'report']) or len(words) <= 3
+
+            active_subagent = "JARVIS"
+            if 'cipher' in task_lower:
+                active_subagent = "CIPHER"
                 logger.info("[%s] Explicit command signal targeting CIPHER Agent", self.agent_id)
-                msg = self.cipher.execute(task, {"task_id": task_id, "file_path": active_file})
-                result = msg.payload.get("result", "")
+                if is_greeting and not has_action:
+                    result = "Hello boss! CIPHER data analyst agent online and ready for SQL, dataset profiling, or analytical reports."
+                else:
+                    msg = self.cipher.execute(task, {"task_id": task_id, "file_path": active_file})
+                    result = msg.payload.get("result", "")
             elif 'argus' in task_lower:
+                active_subagent = "ARGUS"
                 logger.info("[%s] Explicit command signal targeting ARGUS Agent", self.agent_id)
-                msg = self.argus.execute(task, {"task_id": task_id})
-                result = msg.payload.get("result", "")
+                if is_greeting and not has_action:
+                    result = "Hello boss! ARGUS vision agent online and standing by for screen inspections."
+                else:
+                    msg = self.argus.execute(task, {"task_id": task_id})
+                    result = msg.payload.get("result", "")
             elif 'hermes' in task_lower:
+                active_subagent = "HERMES"
                 logger.info("[%s] Explicit command signal targeting HERMES Agent", self.agent_id)
-                msg = self.hermes.execute(task, {"task_id": task_id})
-                result = msg.payload.get("result", "")
+                if is_greeting and not has_action:
+                    result = "Hello boss! HERMES web agent online and ready for web intelligence and scraping."
+                else:
+                    msg = self.hermes.execute(task, {"task_id": task_id})
+                    result = msg.payload.get("result", "")
             elif 'vanguard' in task_lower:
+                active_subagent = "VANGUARD"
                 logger.info("[%s] Explicit command signal targeting VANGUARD Agent", self.agent_id)
-                msg = self.vanguard.execute(task, {"task_id": task_id})
-                result = msg.payload.get("result", "")
+                if is_greeting and not has_action:
+                    result = "Hello boss! VANGUARD security agent online and ready."
+                else:
+                    msg = self.vanguard.execute(task, {"task_id": task_id})
+                    result = msg.payload.get("result", "")
             elif 'forge' in task_lower:
+                active_subagent = "FORGE"
                 logger.info("[%s] Explicit command signal targeting FORGE Agent", self.agent_id)
-                msg = self.forge.execute(task, {"task_id": task_id})
-                result = msg.payload.get("result", "")
+                if is_greeting and not has_action:
+                    result = "Hello boss! FORGE career agent online and ready for resume and job matching tasks."
+                else:
+                    msg = self.forge.execute(task, {"task_id": task_id})
+                    result = msg.payload.get("result", "")
             elif 'jarvis' in task_lower:
+                active_subagent = "JARVIS"
                 logger.info("[%s] Explicit command signal targeting JARVIS Agent", self.agent_id)
-                msg = self.jarvis.execute(task, {"task_id": task_id})
-                result = msg.payload.get("result", "")
+                if is_greeting and not has_action:
+                    result = "Hello boss! JARVIS conversational core online and ready."
+                else:
+                    msg = self.jarvis.execute(task, {"task_id": task_id})
+                    result = msg.payload.get("result", "")
             elif any(w in task_lower for w in ['screen', 'screenshot', 'error on screen', 'look at']):
+                active_subagent = "ARGUS"
                 logger.info("[%s] Routing task to ARGUS Vision Agent", self.agent_id)
                 msg = self.argus.execute(task, {"task_id": task_id})
                 result = msg.payload.get("result", "")
             elif any(w in task_lower for w in ['job', 'jobs', 'resume', 'hiring']):
+                active_subagent = "CIPHER"
                 logger.info("[%s] Routing task to CIPHER / FORGE Agent", self.agent_id)
                 msg = self.cipher.execute(task, {"task_id": task_id})
                 result = msg.payload.get("result", "")
+            elif any(w in task_lower for w in ['search', 'latest', 'episode', 'news', 'find', 'google', 'browse']):
+                active_subagent = "HERMES"
+                logger.info("[%s] Routing task to HERMES Web Agent", self.agent_id)
+                msg = self.hermes.execute(task, {"task_id": task_id})
+                result = msg.payload.get("result", "")
             elif any(w in task_lower for w in ['what is', 'who is', 'explain', 'tell me', 'why', 'how to', 'chat']):
-                logger.info("[%s] Routing task to JARVIS Chat Agent", self.agent_id)
+                active_subagent = "NEXUS"
+                logger.info("[%s] Routing task to NEXUS Chat Agent", self.agent_id)
                 msg = self.jarvis.execute(task, {"task_id": task_id})
                 result = msg.payload.get("result", "")
             else:
                 tool_map = get_tool_map()
                 result = handle_complex_command(task, tool_map)
+            
+            # Update session state with active sub-agent for UI attribution
+            try:
+                from core.session import update as session_update
+                session_update('active_agent', active_subagent)
+            except Exception:
+                pass
+
+            # Broadcast execution log output to target sub-agent UI terminal
+            try:
+                from ui.window import broadcast_agent_log
+                broadcast_agent_log(active_subagent, f"Task completed: {result}", "success")
+            except Exception:
+                pass
             
             latency_ms = int((time.perf_counter() - start_time) * 1000)
             payload = {

@@ -129,7 +129,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
               </div>
 
               <div className="grid grid-cols-2 gap-1.5">
-                {telemetry.cpuCores.map((val, idx) => (
+                {(telemetry.cpuCores || []).map((val, idx) => (
                   <div key={idx} className="space-y-0.5">
                     <div className="flex justify-between text-[9px] text-zinc-500">
                       <span>Core {idx}</span>

@@ -103,9 +103,9 @@ def _build_system_prompt(tool_names: list[str]) -> str:
     base_prompt = (
         f'{persona}\n'
         'PERSONALITY EXAMPLES:\n'
-        '- Instead of "Acknowledged, opening application" say "Immediately, sir. I am opening that now."\n'
-        '- Instead of "I require clarification" say "Forgive me, sir, but I require more details to proceed."\n'
-        '- Instead of "Task completed successfully" say "It is done, sir."\n'
+        '- Instead of "Acknowledged, opening application" say "Immediately, boss. I am opening that now."\n'
+        '- Instead of "I require clarification" say "Forgive me, boss, but I require more details to proceed."\n'
+        '- Instead of "Task completed successfully" say "It is done, boss."\n'
         '\n'
         'RESPONSE FORMAT: Reply with JSON only and no markdown. '
         'Valid outputs: '

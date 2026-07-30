@@ -17,7 +17,7 @@ def sync_memory_vault() -> str:
         from pipeline.graph_processor import GraphProcessor
         gp = GraphProcessor()
         gp.update_graph()
-        return "Memory graph synchronization completed successfully, sir."
+        return "Memory graph synchronization completed successfully, boss."
     except Exception as e:
         logger.error("Failed to sync memory vault: %s", e, exc_info=True)
         return f"Could not sync the memory vault: {str(e)}"
@@ -28,7 +28,7 @@ def query_memory_vault(entity: str) -> str:
         logger.info("Querying memory vault for entity: %s", entity)
         triplets = get_semantic_context(entity)
         if not triplets:
-            return f"I found no context or connections for '{entity}' in my memory, sir."
+            return f"I found no context or connections for '{entity}' in my memory, boss."
         
         # Translate technical graphify relations to human-like verbal phrases
         relation_mappings = {
@@ -39,7 +39,7 @@ def query_memory_vault(entity: str) -> str:
             "relates_to": "is connected to",
         }
         
-        response_lines = [f"Regarding '{entity}', sir, my memory shows the following connections:"]
+        response_lines = [f"Regarding '{entity}', boss, my memory shows the following connections:"]
         for t in triplets:
             src = t.get("source_label", t.get("source", ""))
             rel_key = t.get("relation", "relates_to").strip().lower().replace(" ", "_")
@@ -114,7 +114,7 @@ def memorize_fact(category: str, fact: str) -> str:
         gp = GraphProcessor()
         gp.update_graph()
         
-        return f"Saved the fact to '{category_title}' in persistent memory and updated the graph, sir."
+        return f"Saved the fact to '{category_title}' in persistent memory and updated the graph, boss."
     except Exception as e:
         logger.error("Failed to memorize fact: %s", e, exc_info=True)
         return f"I had trouble saving that detail to my persistent memory: {str(e)}"

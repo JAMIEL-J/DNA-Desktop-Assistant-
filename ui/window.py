@@ -174,23 +174,24 @@ class AssistantWebWindow:
         snap = self._snapshot()
         state = self._map_state(snap)
         if state != self._last_state:
-            self._hub.broadcast({'type': 'state', 'state': state})
+            self._hub.broadcast({'type': 'state', 'payload': state})
             self._last_state = state
 
         command = str(snap.get('last_command') or '').strip()
         if command and command != self._last_command:
-            self._hub.broadcast({'type': 'stt', 'text': command})
+            self._hub.broadcast({'type': 'stt', 'payload': {'text': command}})
             self._last_command = command
 
         result = str(snap.get('last_result') or '').strip()
         if result and result != self._last_result:
-            self._hub.broadcast({'type': 'tts', 'text': result})
+            active_agent = str(snap.get('active_agent') or 'JARVIS')
+            self._hub.broadcast({'type': 'tts', 'payload': {'text': result, 'agentName': active_agent}})
             self._last_result = result
 
         audio_level = float(snap.get('mic_level') or 0.0)
         audio_level = max(0.0, min(1.0, audio_level))
         if self._last_audio_level is None or abs(audio_level - self._last_audio_level) > 0.02:
-            self._hub.broadcast({'type': 'audio_level', 'level': audio_level})
+            self._hub.broadcast({'type': 'audio_level', 'payload': {'level': audio_level}})
             self._last_audio_level = audio_level
 
         active_skill = snap.get('active_skill')
@@ -234,20 +235,43 @@ class AssistantWebWindow:
             for cpu_pct, name in top
         ]
 
+        cpu_cores = [round(c, 1) for c in psutil.cpu_percent(percpu=True)]
+
         return {
             'type': 'metrics',
-            'cpu': round(cpu, 1),
-            'ram': round(ram_gb, 2),
-            'latency_ms': None,
-            'apps': apps,
-            'total_apps': len(psutil.pids()),
+            'payload': {
+                'cpu_percent': round(cpu, 1),
+                'cpu_cores': cpu_cores,
+                'used_memory_gb': round(ram_gb, 2),
+                'total_memory_gb': round(mem.total / (1024 ** 3), 2),
+                'memory_percent': round(mem.percent, 1),
+                'latency_ms': None,
+                'apps': apps,
+                'total_apps': len(psutil.pids()),
+            }
         }
 
 
+_GLOBAL_HUB: _WebSocketHub | None = None
+
+def broadcast_agent_log(agent_name: str, message: str, level: str = 'info') -> None:
+    """Broadcast an agent-specific log event over WebSocket UI bridge."""
+    if _GLOBAL_HUB:
+        _GLOBAL_HUB.broadcast({
+            'type': 'log',
+            'payload': {
+                'agentName': agent_name,
+                'message': message,
+                'level': level
+            }
+        })
+
 def run_assistant_window() -> bool:
-    """Run the PySide6 Web UI event loop. Returns False if PySide6 is unavailable."""
+    """Run the Web UI event loop."""
+    global _GLOBAL_HUB
     logger.info('Starting Web UI Hub...')
     hub = _WebSocketHub()
+    _GLOBAL_HUB = hub
     hub.start()
 
     window = AssistantWebWindow(hub)

@@ -65,7 +65,7 @@ export const FilesTab: React.FC<FilesTabProps> = ({ agent }) => {
           <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-500 font-bold flex items-center gap-1">
             <Folder className="w-3 h-3 text-amber-400" /> /workspace/
           </div>
-          {agent.files.map((file) => {
+          {(agent.files || []).map((file) => {
             const isSelected = selectedFile?.id === file.id;
             return (
               <button

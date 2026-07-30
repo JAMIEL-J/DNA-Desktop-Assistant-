@@ -82,8 +82,13 @@ export const AgentWindowHeader: React.FC<AgentWindowHeaderProps> = ({
             <span className="w-2 h-2 rounded-full inline-block shrink-0" style={{ backgroundColor: agent.borderHex }}></span>
             <span className="font-bold tracking-tight text-[#D1D1D1] text-[12px] truncate">{agent.name}</span>
             <span className={`px-1.5 py-0.2 text-[9px] font-semibold uppercase tracking-wider rounded border ${roleStyle.bg} ${roleStyle.text} ${roleStyle.border}`}>
-              {agent.role}
+              ROLE: {agent.role}
             </span>
+            {agent.transparency?.modelUsed && (
+              <span className="px-1.5 py-0.2 text-[9px] font-mono font-medium rounded bg-purple-950/40 text-purple-300 border border-purple-500/30">
+                MODEL: {agent.transparency.modelUsed}
+              </span>
+            )}
           </div>
 
           <div className="h-3 w-px bg-[#1A1A1A] hidden sm:block"></div>

@@ -31,6 +31,7 @@ class HermesAgent(AgentBase):
         start_time = time.perf_counter()
 
         logger.info("[%s] Processing web task: %r", self.agent_id, task)
+        self.log_event(f"Processing web query: '{task}'", "info")
 
         try:
             task_lower = (task or "").lower()
@@ -39,11 +40,15 @@ class HermesAgent(AgentBase):
             else:
                 url = (context or {}).get("url")
                 if url and fetch_and_summarize:
+                    self.log_event(f"Fetching URL content: {url}", "info")
                     result = fetch_and_summarize(url)
                 elif web_search:
+                    self.log_event(f"Executing web search skill for: '{task}'", "info")
                     result = web_search(task)
                 else:
                     result = "Web search skills are currently unavailable."
+
+            self.log_event(f"Search complete: {result[:120]}...", "success")
 
             latency_ms = int((time.perf_counter() - start_time) * 1000)
             payload = {

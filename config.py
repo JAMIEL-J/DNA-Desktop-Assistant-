@@ -136,32 +136,32 @@ TTS_HUMAN_PAUSE_MIN_SEC = float(os.getenv('TTS_HUMAN_PAUSE_MIN_SEC', '0.18'))
 TTS_HUMAN_PAUSE_MAX_SEC = float(os.getenv('TTS_HUMAN_PAUSE_MAX_SEC', '0.34'))
 
 WAKE_RESPONSES = [
-    'Yes sir, I am listening.',
-    'At your service, sir.',
-    'Please go ahead, sir.',
-    'I am listening, sir.',
-    'Ready when you are, sir.',
-    'Please continue, sir.',
+    'Yes boss, I am listening.',
+    'At your service, boss.',
+    'Please go ahead, boss.',
+    'I am listening, boss.',
+    'Ready when you are, boss.',
+    'Please continue, boss.',
 ]
 
 SLEEP_RESPONSES = [
-    'Understood, sir. I will remain on standby.',
-    'Very well, sir. Call me when needed.',
-    'As you wish, sir. I will stay quiet for now.',
-    'Of course, sir. Stepping back.',
+    'Understood, boss. I will remain on standby.',
+    'Very well, boss. Call me when needed.',
+    'As you wish, boss. I will stay quiet for now.',
+    'Of course, boss. Stepping back.',
 ]
 
 TIMEOUT_RESPONSES = [
-    'I will give you some quiet time, sir.',
-    'I am here whenever you need me, sir.',
-    'Standing by, sir.',
+    'I will give you some quiet time, boss.',
+    'I am here whenever you need me, boss.',
+    'Standing by, boss.',
 ]
 
 DISMISS_RESPONSES = [
-    'Understood, sir. I am stepping back.',
-    'Certainly, sir. Going quiet now.',
-    'As requested, sir. I will wait for your call.',
-    'Very well, sir. I remain at your service.',
+    'Understood, boss. I am stepping back.',
+    'Certainly, boss. Going quiet now.',
+    'As requested, boss. I will wait for your call.',
+    'Very well, boss. I remain at your service.',
 ]
 
 # Workflow Templates

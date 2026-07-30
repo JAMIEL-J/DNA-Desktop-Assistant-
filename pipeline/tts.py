@@ -192,6 +192,7 @@ def speak(text: str) -> str:
         playback_rate = int(base_sample_rate * speed_factor)
 
         logger.info('Speaking (fluid 1.22x stream): "%s"', cleaned_text)
+        session_update('last_result', cleaned_text)
         
         # Stream chunks directly to audio stream at 1.22x pacing
         with sd.OutputStream(samplerate=playback_rate, channels=1, dtype='int16') as stream:

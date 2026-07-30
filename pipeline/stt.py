@@ -251,15 +251,25 @@ def _correct_transcription(text: str) -> str:
     for wrong, right in sorted(_CORRECTIONS.items(), key=lambda x: -len(x[0])):
         corrected = corrected.replace(wrong, right)
 
-    # Fuzzy-match individual words against known vocabulary
+    # Dynamic Vocabulary Auto-Correction (Levenshtein + Dynamic Domain Vocabulary)
+    # Collect dynamic vocabulary from registered tools, skills, and system app names
+    try:
+        from core.skill_registry import get_all_tools
+        tool_names = set(get_all_tools().keys())
+    except Exception:
+        tool_names = set()
+
+    dynamic_vocab = _KNOWN_WORDS | tool_names
+
     words = corrected.split()
     result = []
     for word in words:
         clean = re.sub(r'[^\w]', '', word)
-        if clean and clean not in _KNOWN_WORDS and len(clean) > 3:
-            matches = get_close_matches(clean, _KNOWN_WORDS, n=1, cutoff=0.7)
+        if clean and clean not in dynamic_vocab and len(clean) >= 3:
+            # Multi-candidate distance matching (Google 'Did you mean' style)
+            matches = get_close_matches(clean, dynamic_vocab, n=1, cutoff=0.68)
             if matches:
-                logger.debug('Fuzzy corrected: "%s" → "%s"', clean, matches[0])
+                logger.info('Dynamic STT Auto-Corrected: "%s" → "%s"', clean, matches[0])
                 result.append(word.replace(clean, matches[0]))
             else:
                 result.append(word)

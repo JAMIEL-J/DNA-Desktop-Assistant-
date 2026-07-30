@@ -77,7 +77,7 @@ export const TransparencyTab: React.FC<TransparencyTabProps> = ({ agent }) => {
             <Zap className="w-4 h-4 text-amber-400" /> Reasoning Step Breakdown
           </span>
           <div className="space-y-1.5">
-            {transparency.reasoningSummary.map((step, idx) => (
+            {(transparency?.reasoningSummary || []).map((step, idx) => (
               <div key={idx} className="flex items-start gap-2 text-xs text-zinc-300 bg-[#050507] p-2 rounded border border-zinc-900">
                 <span className="text-purple-400 font-bold shrink-0">0{idx + 1}.</span>
                 <span>{step}</span>
@@ -92,7 +92,7 @@ export const TransparencyTab: React.FC<TransparencyTabProps> = ({ agent }) => {
             <Layers className="w-4 h-4 text-cyan-400" /> Context Dependencies
           </span>
           <div className="flex flex-wrap gap-2">
-            {transparency.dependencies.map((dep, idx) => (
+            {(transparency?.dependencies || []).map((dep, idx) => (
               <span key={idx} className="px-2.5 py-1 bg-[#050507] border border-zinc-800 rounded text-xs text-zinc-300 font-mono">
                 {dep}
               </span>

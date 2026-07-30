@@ -72,14 +72,16 @@ export const TerminalTab: React.FC<TerminalTabProps> = ({
     <div className="flex flex-col h-full bg-[#050505] text-[#D1D1D1] font-mono text-xs select-text relative">
       {/* Terminal Bar */}
       <div className="flex items-center justify-between px-2.5 py-1 bg-[#0B0B0B] border-b border-[#1A1A1A] text-[10px] text-[#555555]">
-        <div className="flex items-center gap-1.5">
-          <Terminal className="w-3 h-3 text-[#B983FF]" />
-          <span className="text-[#D1D1D1]">bash - {agent.name.toLowerCase()}@matrix:~</span>
+        <div className="flex items-center gap-1.5 truncate">
+          <Terminal className="w-3 h-3 text-[#B983FF] shrink-0" />
+          <span className="text-[#D1D1D1] font-bold">
+            {agent.name.toLowerCase()} ({agent.role}) [{agent.transparency?.modelUsed || 'system-native'}]@matrix:~
+          </span>
           <span className="text-[#1A1A1A]">|</span>
           <span>{agent.logs.length} lines</span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={handleCopyLogs}
             className="flex items-center gap-1 hover:text-[#D1D1D1] transition text-[10px]"
@@ -105,11 +107,14 @@ export const TerminalTab: React.FC<TerminalTabProps> = ({
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto p-2.5 space-y-1 font-mono leading-relaxed bg-[#050505]"
       >
-        <div className="text-[#555555] pb-1.5 border-b border-[#1A1A1A] mb-1.5 text-[10px]">
-          Process PID [{agent.pid}] initialized for task: {agent.activeTask}
+        <div className="text-[#555555] pb-1.5 border-b border-[#1A1A1A] mb-1.5 text-[10px] flex items-center justify-between">
+          <span>Process PID [{agent.pid}] initialized | Role: <strong className="text-zinc-300">{agent.role}</strong></span>
+          <span className="px-1.5 py-0.2 bg-zinc-900 border border-zinc-800 rounded text-purple-400 font-bold">
+            MODEL: {agent.transparency?.modelUsed || 'system-native'}
+          </span>
         </div>
 
-        {agent.logs.map((log) => (
+        {(agent.logs || []).map((log) => (
           <div key={log.id} className="flex items-start gap-2 hover:bg-[#111111] px-1 py-0.2 rounded text-[11px]">
             <span className="text-[#555555] shrink-0 text-[10px]">[{log.timestamp}]</span>
             <span className={`break-all ${getLogLevelClass(log.level)}`}>

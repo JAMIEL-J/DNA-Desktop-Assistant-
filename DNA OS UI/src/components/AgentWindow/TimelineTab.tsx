@@ -56,7 +56,7 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({ agent }) => {
       <div className="flex-1 grid grid-cols-1 md:grid-cols-2 overflow-hidden divide-y md:divide-y-0 md:divide-x divide-zinc-900">
         {/* Left: Step Nodes List */}
         <div className="overflow-y-auto p-3 space-y-3 bg-[#07070a]">
-          {agent.timeline.map((step, idx) => {
+          {(agent.timeline || []).map((step, idx) => {
             const isScrubbed = idx === scrubIndex;
             return (
               <div

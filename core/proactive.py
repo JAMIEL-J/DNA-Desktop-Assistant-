@@ -55,8 +55,8 @@ def _monitor_cpu():
                     )
                     show_toast("High CPU Usage", f"CPU utilization is at {int(cpu)}%")
 
-                    # Only alert if the user isn't actively speaking/listening to DNA
-                    if not session_get('is_listening'):
+                    # Only alert if the user isn't actively speaking/listening to DNA AND assistant is NOT sleeping
+                    if not session_get('is_listening') and session_get('assistant_state') != 'sleeping':
                         speak_async(msg)
                     
                     _last_cpu_alert = now

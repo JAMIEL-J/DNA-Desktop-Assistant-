@@ -98,7 +98,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         onClose();
       },
     },
-    ...agents.map((ag) => ({
+    ...(agents || []).map((ag) => ({
       id: `agent-focus-${ag.id}`,
       title: `Focus Agent Terminal: ${ag.name} (${ag.role})`,
       category: 'Agents',

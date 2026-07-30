@@ -253,7 +253,7 @@ export const AgentAvatarCard: React.FC<AgentAvatarCardProps> = ({
                 CORE ARCHITECTURE REASONING:
               </span>
               <ul className="space-y-1 text-[11px] text-[#A0A0A0] font-sans">
-                {agent.transparency.reasoningSummary.slice(0, 3).map((r, i) => (
+                {(agent.transparency?.reasoningSummary || []).slice(0, 3).map((r, i) => (
                   <li key={i} className="flex items-start gap-1.5">
                     <span className="text-[#7DCE13] mt-0.5">&bull;</span>
                     <span>{r}</span>

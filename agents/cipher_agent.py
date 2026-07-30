@@ -27,14 +27,18 @@ class CipherAgent(AgentBase):
         start_time = time.perf_counter()
 
         logger.info("[%s] Processing data task: %r", self.agent_id, task)
+        self.log_event(f"Processing analytical query: '{task}'", "info")
 
         try:
             active_file = (context or {}).get("file_path") or self.blackboard.get("active_file")
             
             if active_file:
+                self.log_event(f"Running data engine analysis on active file: {active_file}", "info")
                 result = run_analysis(active_file, task)
+                self.log_event("Data analysis completed successfully.", "success")
             else:
                 result = "Please specify or load a dataset file path for me to analyze, sir."
+                self.log_event("No active dataset specified for analytical query.", "warn")
 
             latency_ms = int((time.perf_counter() - start_time) * 1000)
             payload = {

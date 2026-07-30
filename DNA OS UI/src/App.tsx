@@ -56,22 +56,21 @@ export default function App() {
   ];
 
   // Spoken voice subtitles state
-  const [subtitle, setSubtitle] = useState<{ text: str; type: 'stt' | 'tts'; timestamp: string } | null>(null);
+  const [subtitle, setSubtitle] = useState<{ text: string; type: 'stt' | 'tts'; timestamp: string } | null>(null);
 
   // Real-time Python WebSocket Handler
   const handleWSMessage = useCallback((msg: WSMessage) => {
     const timeStr = new Date().toLocaleTimeString('en-US', { hour12: false });
     
     if (msg.type === 'metrics' && msg.payload) {
-      setTelemetry({
-        cpuUsagePercent: msg.payload.cpu_percent || 15,
-        memoryUsagePercent: msg.payload.memory_percent || 40,
-        gpuUsagePercent: 12,
-        networkKbps: msg.payload.network_kbps || 120,
-        activeThreads: msg.payload.active_threads || 34,
-        totalMemoryGb: msg.payload.total_memory_gb || 8.0,
-        usedMemoryGb: msg.payload.used_memory_gb || 3.2,
-      });
+      setTelemetry((prev) => ({
+        ...prev,
+        cpuUsageTotal: msg.payload.cpu_percent || prev.cpuUsageTotal,
+        cpuCores: msg.payload.cpu_cores || prev.cpuCores,
+        ramUsedGb: msg.payload.used_memory_gb || prev.ramUsedGb,
+        ramTotalGb: msg.payload.total_memory_gb || prev.ramTotalGb,
+        activeThreads: msg.payload.total_apps || prev.activeThreads,
+      }));
     } else if (msg.type === 'stt' && msg.payload) {
       const text = typeof msg.payload === 'string' ? msg.payload : msg.payload.text;
       if (text) {
@@ -83,11 +82,12 @@ export default function App() {
       }
     } else if (msg.type === 'tts' && msg.payload) {
       const text = typeof msg.payload === 'string' ? msg.payload : msg.payload.text;
+      const agentName = (typeof msg.payload === 'object' && msg.payload.agentName) ? msg.payload.agentName : 'JARVIS';
       if (text) {
-        setSubtitle({ text: `NEXUS: "${text}"`, type: 'tts', timestamp: timeStr });
+        setSubtitle({ text: `${agentName}: "${text}"`, type: 'tts', timestamp: timeStr });
         setGlobalEvents((prev) => [
           ...prev,
-          { id: `ev-${Date.now()}`, timestamp: timeStr, sourceAgent: 'NEXUS', level: 'info', message: text }
+          { id: `ev-${Date.now()}`, timestamp: timeStr, sourceAgent: agentName, level: 'info', message: text }
         ]);
       }
     } else if (msg.type === 'log' && msg.payload) {
@@ -464,27 +464,20 @@ export default function App() {
         />
       </div>
 
-      {/* Live Voice Subtitle Overlay Banner */}
+      {/* Live Voice Subtitle Overlay Banner (Floating, Fully Visible Multi-Line) */}
       {subtitle && (
-        <div className="bg-[#0D0B18] border-t border-b border-[#B983FF]/40 px-4 py-1.5 flex items-center justify-between text-xs font-mono select-none z-40 shadow-[0_0_15px_rgba(185,131,255,0.15)]">
-          <div className="flex items-center gap-2 overflow-hidden">
-            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${subtitle.type === 'stt' ? 'bg-[#FF9F45]/20 text-[#FF9F45]' : 'bg-[#B983FF]/20 text-[#B983FF]'}`}>
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 max-w-4xl w-[90%] bg-[#0D0B18]/95 backdrop-blur-md border border-[#B983FF]/50 px-5 py-3 rounded-xl flex items-start justify-between text-xs font-mono select-text z-50 shadow-[0_0_30px_rgba(185,131,255,0.25)]">
+          <div className="flex items-start gap-3 overflow-hidden">
+            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shrink-0 ${subtitle.type === 'stt' ? 'bg-[#FF9F45]/20 text-[#FF9F45] border border-[#FF9F45]/40' : 'bg-[#B983FF]/20 text-[#B983FF] border border-[#B983FF]/40'}`}>
               {subtitle.type === 'stt' ? 'VOICE INPUT' : 'NEXUS SPOKEN VOICE'}
             </span>
-            <span className="text-[#D1D1D1] font-medium truncate">{subtitle.text}</span>
+            <p className="text-[#F0F0F0] font-medium leading-relaxed whitespace-pre-wrap break-words text-xs">
+              {subtitle.text}
+            </p>
           </div>
-          <span className="text-[#555555] text-[10px] shrink-0 ml-3">{subtitle.timestamp}</span>
+          <span className="text-[#777777] text-[10px] shrink-0 ml-4 font-bold">{subtitle.timestamp}</span>
         </div>
       )}
-
-      {/* Bottom Global Broadcast Console */}
-      <BottomConsole
-        events={globalEvents}
-        onBroadcastCommand={handleBroadcastCommand}
-        onClearEvents={() => setGlobalEvents([])}
-        isCollapsed={isBottomConsoleCollapsed}
-        onToggleCollapse={() => setIsBottomConsoleCollapsed((p) => !p)}
-      />
 
       {/* Modals & Dialog Overlay */}
       <CommandPalette

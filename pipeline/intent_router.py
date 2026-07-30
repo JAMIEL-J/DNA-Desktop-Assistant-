@@ -412,8 +412,15 @@ SIMPLE_INTENTS = [
     (re.compile(r'\b(?:list|show)\s+(?:my\s+)?(?:files\s+(?:in|on)\s+(?:the\s+)?)?(downloads?|desktop|documents?)\b', re.I),
      'list_files', lambda m: {'directory': _clean_arg(m.group(1))}),
 
+    # --- NEWS / HEADLINE FOLLOW-UPS ---
+    (re.compile(r'\b(?:explain|details?\s+on|tell\s+me\s+more\s+about|elaborate\s+on)\s+(?:headline\s+)?(?:number\s+)?(\d+|one|two|three|four|five|1|2|3|4|5)\b', re.I),
+     'chat', lambda m: {'question': f"Explain headline #{m.group(1)} from the news you just read to me."}),
+    (re.compile(r'\b(?:what\s+were\s+the\s+news|what\s+news\s+did\s+you\s+read|news\s+you\s+read\s+before|summarize\s+the\s+news)\b', re.I),
+     'chat', lambda m: {'question': "Summarize the technology news headlines you read to me earlier."}),
+
     # --- GENERIC catch-alls (MUST BE LAST) ---
-    (re.compile(r'\b(?:open|launch|start|run)(?:[,\s]+)?(.*)', re.I),
+    # Require explicit application trigger or single word target, avoiding phrases like 'microsoft is open competing'
+    (re.compile(r'\b(?:open|launch|start|run)\s+(?:app|application|program|software)?\s*([a-zA-Z0-9_\-\s]{1,20})$', re.I),
      'open_app', lambda m: {'app_name': _clean_arg(m.group(1))}),
 
     # ── Explorer-safe close (MUST be before generic close_app) ──
@@ -571,6 +578,17 @@ def route(command: str, allow_llm: bool = True) -> Optional[str]:
 
     # Resolve pronouns using session state
     cleaned = command.strip().lower()
+
+    # Phonetic STT normalization map for Whisper mishearings
+    _PHONETIC_MAP = [
+        (r'\borgas\b', 'nexus'),
+        (r'\bmode details\b', 'more details'),
+        (r'\bsummer restart\b', 'system restart'),
+        (r'\blet s pull up\b', 'let us pull up'),
+    ]
+    for pattern, repl in _PHONETIC_MAP:
+        cleaned = re.sub(pattern, repl, cleaned)
+
     cleaned = resolve_pronouns(cleaned)
     logger.debug('Routing command: "%s"', cleaned)
 

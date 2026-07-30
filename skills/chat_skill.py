@@ -188,7 +188,7 @@ def _call_ollama_chat(question: str, history: list[dict], memory_context: str = 
 def chat(question: str = '') -> str:
     """Answer a question conversationally with follow-up support."""
     if not question or not question.strip():
-        return 'What would you like to know, sir?'
+        return 'What would you like to know, boss?'
 
     try:
         # RAG: Retrieve context from semantic memory graph
@@ -223,6 +223,21 @@ def chat(question: str = '') -> str:
         except Exception as e:
             logger.error('Failed to retrieve semantic context: %s', e)
 
+        # Swarm Inter-Agent Memory: Retrieve recent sub-agent Blackboard executions
+        try:
+            from core.blackboard import get_global_blackboard
+            bb = get_global_blackboard()
+            recent_msgs = bb.get_recent_history(limit=5)
+            if recent_msgs:
+                memory_context_list.append("\nRECENT SWARM AGENT EXECUTION OUTPUTS & RECENT FINDINGS:")
+                for item in recent_msgs:
+                    agent = item.get("agent_id", "AGENT")
+                    action = item.get("action", "action")
+                    res = item.get("result", "")
+                    memory_context_list.append(f"- [{agent}] ({action}): {res}")
+        except Exception as e:
+            logger.error('Failed to retrieve Blackboard context: %s', e)
+
         memory_context = "\n".join(memory_context_list) if memory_context_list else ""
 
         history = _get_history()
@@ -241,7 +256,7 @@ def chat(question: str = '') -> str:
         answer = _clean_answer(answer)
 
         if not answer:
-            answer = "I am not quite sure about that, sir. Could you rephrase?"
+            answer = "I am not quite sure about that, boss. Could you rephrase?"
 
         _add_to_history('assistant', answer)
         try:
@@ -252,12 +267,12 @@ def chat(question: str = '') -> str:
         return answer
 
     except requests.exceptions.ConnectionError:
-        return "Sorry sir, I cannot reach my brain right now. Make sure the AI service is running."
+        return "Sorry boss, I cannot reach my brain right now. Make sure the AI service is running."
     except requests.exceptions.Timeout:
-        return "That took too long, sir. Could you try again?"
+        return "That took too long, boss. Could you try again?"
     except Exception as e:
         logger.error('Chat failed: %s', e, exc_info=True)
-        return "Sorry sir, I had trouble answering that. Could you try again?"
+        return "Sorry boss, I had trouble answering that. Could you try again?"
 
 
 def clear_chat_history() -> str:
@@ -267,7 +282,7 @@ def clear_chat_history() -> str:
         _history.clear()
         _session_timestamp = None
     logger.info('Conversation history manually cleared')
-    return 'Conversation history cleared, sir. Fresh start.'
+    return 'Conversation history cleared, boss. Fresh start.'
 
 
 
