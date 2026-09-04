@@ -50,7 +50,7 @@ def _monitor_cpu():
                     logger.warning("High CPU detected: %.1f%%", cpu)
                     
                     msg = (
-                        f"Sir, your CPU usage is running high at {int(cpu)} percent. "
+                        f"Boss, your CPU usage is running high at {int(cpu)} percent. "
                         "Would you like me to list heavy processes?"
                     )
                     show_toast("High CPU Usage", f"CPU utilization is at {int(cpu)}%")
@@ -108,10 +108,10 @@ def _monitor_downloads():
                 if (now - _last_download_alert) > DOWNLOAD_ALERT_COOLDOWN:
                     if len(new_files) == 1:
                         new_name = Path(list(new_files)[0]).name
-                        msg = f"Sir, your download is complete: {new_name}."
+                        msg = f"Boss, your download is complete: {new_name}."
                         show_toast("Download Complete", new_name)
                     else:
-                        msg = f"Sir, {len(new_files)} new files have finished downloading."
+                        msg = f"Boss, {len(new_files)} new files have finished downloading."
                         show_toast("Downloads Complete", f"{len(new_files)} files have finished downloading.")
                         
                     if not session_get('is_listening'):

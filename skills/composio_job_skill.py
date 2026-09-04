@@ -39,7 +39,7 @@ def preview_application_email(to_email: str, subject: str, body: str) -> str:
     Rejects collision if another action is pending.
     """
     if has_pending():
-        return f"You already have a pending {_pending['action_type']} action awaiting confirmation. Please confirm or cancel it first, sir."
+        return f"You already have a pending {_pending['action_type']} action awaiting confirmation. Please confirm or cancel it first, boss."
 
     _pending["action_type"] = "email"
     _pending["payload"] = {
@@ -58,7 +58,7 @@ def preview_log_sheet(spreadsheet_id: str, row_data: list) -> str:
     Rejects collision if another action is pending.
     """
     if has_pending():
-        return f"You already have a pending {_pending['action_type']} action awaiting confirmation. Please confirm or cancel it first, sir."
+        return f"You already have a pending {_pending['action_type']} action awaiting confirmation. Please confirm or cancel it first, boss."
 
     _pending["action_type"] = "sheet"
     _pending["payload"] = {
@@ -88,7 +88,7 @@ def confirm_composio_action(dry_run: bool = False) -> str:
 
     if time.time() > _pending["expires_at"]:
         _clear_pending()
-        return "That confirmation request has expired, sir. Please preview the email or sheet log again."
+        return "That confirmation request has expired, boss. Please preview the email or sheet log again."
 
     action_type = _pending["action_type"]
     payload = _pending["payload"]

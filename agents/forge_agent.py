@@ -5,9 +5,10 @@ from core.agent_base import AgentBase, AgentState
 from core.blackboard import Blackboard, BlackboardMessage
 
 try:
-    from skills.job_search_skill import enter_job_search_mode, search_role
+    from skills.job_search_skill import enter_job_search_mode, search_role, ROLE_QUERIES
 except Exception:
     enter_job_search_mode = search_role = None
+    ROLE_QUERIES = {}
 
 logger = logging.getLogger('dna.agent.forge')
 
@@ -25,21 +26,33 @@ class ForgeAgent(AgentBase):
         status = "ready" if enter_job_search_mode else "degraded"
         return {"status": status, "detail": f"FORGE career agent is {status}."}
 
+    @staticmethod
+    def _extract_role(task: str) -> str | None:
+        """Pull a known role out of free text ('find DATA ANALYST jobs' → 'data analyst')."""
+        lowered = (task or "").lower()
+        for role in sorted((ROLE_QUERIES or {}), key=len, reverse=True):
+            if role != "all" and role in lowered:
+                return role
+        return None
+
     def execute(self, task: str, context: dict = None) -> BlackboardMessage:
         self.transition(AgentState.BUSY)
         task_id = (context or {}).get("task_id") or "task_forge"
         start_time = time.perf_counter()
 
         logger.info("[%s] Processing career task: %r", self.agent_id, task)
+        self.log_event(f"Processing career task: '{task}'", "info")
 
         try:
-            role = (context or {}).get("role")
+            role = (context or {}).get("role") or self._extract_role(task)
             if role and search_role:
                 result = search_role(role)
             elif enter_job_search_mode:
                 result = enter_job_search_mode()
             else:
                 result = "Career operations skills are currently unavailable."
+
+            self.log_event(f"Career task done: {str(result)[:120]}...", "success")
 
             latency_ms = int((time.perf_counter() - start_time) * 1000)
             payload = {

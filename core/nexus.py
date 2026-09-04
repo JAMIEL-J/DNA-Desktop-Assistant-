@@ -50,6 +50,34 @@ class NexusOrchestrator(AgentBase):
             }
         }
 
+    @staticmethod
+    def _titan_context(task: str, task_id: str) -> dict:
+        """Translate free text into TITAN's tool_name/tool_args context.
+
+        Falls back to a bare task_id when no deterministic intent matches —
+        TITAN then answers honestly instead of fake-executing.
+        """
+        ctx: dict = {"task_id": task_id}
+        try:
+            from pipeline.intent_router import match_simple_intent
+            matched = match_simple_intent(task)
+        except Exception:
+            matched = None
+        if matched:
+            tool_name, args = matched
+            try:
+                from core.safety import is_tool_dangerous
+                if is_tool_dangerous(tool_name):
+                    # Never auto-execute dangerous tools from NEXUS: the
+                    # voice confirmation flow lives in the router.
+                    ctx["refused_dangerous"] = tool_name
+                    return ctx
+            except Exception:
+                pass
+            ctx["tool_name"] = tool_name
+            ctx["tool_args"] = args
+        return ctx
+
     def execute(self, task: str, context: dict = None) -> BlackboardMessage:
         self.transition(AgentState.BUSY)
         task_id = (context or {}).get("task_id") or f"task_{uuid.uuid4().hex[:8]}"
@@ -58,6 +86,7 @@ class NexusOrchestrator(AgentBase):
             # Check context / intent hints for routing to specialist sub-agents
             active_file = self.blackboard.get("active_file")
             task_lower = (task or "").lower()
+            result = None
             # Swarm Agent Status Roll Call Query
             if any(phrase in task_lower for phrase in ['status of all agents', 'agent status', 'all agents status', 'agent roll call', 'swarm status']):
                 diag = self.diagnose()
@@ -71,7 +100,7 @@ class NexusOrchestrator(AgentBase):
             is_greeting = any(g in task_lower for g in ['hello', 'hi', 'hey', 'status', 'who are you', 'report']) or len(words) <= 3
 
             active_subagent = "JARVIS"
-            if 'cipher' in task_lower:
+            if result is None and 'cipher' in task_lower:
                 active_subagent = "CIPHER"
                 logger.info("[%s] Explicit command signal targeting CIPHER Agent", self.agent_id)
                 if is_greeting and not has_action:
@@ -119,17 +148,39 @@ class NexusOrchestrator(AgentBase):
                 else:
                     msg = self.jarvis.execute(task, {"task_id": task_id})
                     result = msg.payload.get("result", "")
+            elif 'titan' in task_lower:
+                active_subagent = "TITAN"
+                logger.info("[%s] Explicit command signal targeting TITAN Agent", self.agent_id)
+                if is_greeting and not has_action:
+                    result = "Hello boss! TITAN system control online and ready for volume, brightness, apps, and power."
+                else:
+                    msg = self.titan.execute(task, self._titan_context(task, task_id))
+                    result = msg.payload.get("result", "")
+            elif any(w in task_lower for w in ['volume', 'brightness', 'mute', 'unmute',
+                                               'shutdown', 'restart', 'lock screen',
+                                               'wifi', 'bluetooth', 'battery']):
+                active_subagent = "TITAN"
+                logger.info("[%s] Routing task to TITAN System Agent", self.agent_id)
+                msg = self.titan.execute(task, self._titan_context(task, task_id))
+                result = msg.payload.get("result", "")
             elif any(w in task_lower for w in ['screen', 'screenshot', 'error on screen', 'look at']):
                 active_subagent = "ARGUS"
                 logger.info("[%s] Routing task to ARGUS Vision Agent", self.agent_id)
                 msg = self.argus.execute(task, {"task_id": task_id})
                 result = msg.payload.get("result", "")
             elif any(w in task_lower for w in ['job', 'jobs', 'resume', 'hiring']):
-                active_subagent = "CIPHER"
-                logger.info("[%s] Routing task to CIPHER / FORGE Agent", self.agent_id)
-                msg = self.cipher.execute(task, {"task_id": task_id})
+                active_subagent = "FORGE"
+                logger.info("[%s] Routing task to FORGE Career Agent", self.agent_id)
+                msg = self.forge.execute(task, {"task_id": task_id})
                 result = msg.payload.get("result", "")
-            elif any(w in task_lower for w in ['search', 'latest', 'episode', 'news', 'find', 'google', 'browse']):
+            elif any(w in task_lower for w in ['dataset', 'data analysis']):
+                active_subagent = "CIPHER"
+                logger.info("[%s] Routing task to CIPHER Data Agent", self.agent_id)
+                msg = self.cipher.execute(task, {"task_id": task_id, "file_path": active_file})
+                result = msg.payload.get("result", "")
+            elif any(w in task_lower for w in ['search', 'latest', 'episode', 'news', 'find', 'google', 'browse',
+                                                     'click', 'fill form', 'fill the', 'type into', 'press key',
+                                                     'automate', 'browser automation', 'playwright', 'snapshot']):
                 active_subagent = "HERMES"
                 logger.info("[%s] Routing task to HERMES Web Agent", self.agent_id)
                 msg = self.hermes.execute(task, {"task_id": task_id})
@@ -139,7 +190,7 @@ class NexusOrchestrator(AgentBase):
                 logger.info("[%s] Routing task to NEXUS Chat Agent", self.agent_id)
                 msg = self.jarvis.execute(task, {"task_id": task_id})
                 result = msg.payload.get("result", "")
-            else:
+            elif result is None:
                 tool_map = get_tool_map()
                 result = handle_complex_command(task, tool_map)
             

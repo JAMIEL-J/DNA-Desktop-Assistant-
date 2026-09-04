@@ -37,7 +37,7 @@ class CipherAgent(AgentBase):
                 result = run_analysis(active_file, task)
                 self.log_event("Data analysis completed successfully.", "success")
             else:
-                result = "Please specify or load a dataset file path for me to analyze, sir."
+                result = "Please specify or load a dataset file path for me to analyze, boss."
                 self.log_event("No active dataset specified for analytical query.", "warn")
 
             latency_ms = int((time.perf_counter() - start_time) * 1000)

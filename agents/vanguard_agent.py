@@ -5,9 +5,14 @@ from core.agent_base import AgentBase, AgentState
 from core.blackboard import Blackboard, BlackboardMessage
 
 try:
-    from skills.organizer_skill import organize_downloads, organize_folder, list_files
+    from skills.organizer_skill import organize_downloads, organize_folder
 except Exception:
-    organize_downloads = organize_folder = list_files = None
+    organize_downloads = organize_folder = None
+
+try:
+    from skills.file_skill import list_files
+except Exception:
+    list_files = None
 
 logger = logging.getLogger('dna.agent.vanguard')
 
@@ -31,6 +36,7 @@ class VanguardAgent(AgentBase):
         start_time = time.perf_counter()
 
         logger.info("[%s] Processing storage task: %r", self.agent_id, task)
+        self.log_event(f"Processing storage task: '{task}'", "info")
 
         try:
             task_lower = task.lower()
@@ -44,6 +50,8 @@ class VanguardAgent(AgentBase):
                 result = organize_folder(path)
             else:
                 result = "Storage skills are currently unavailable."
+
+            self.log_event(f"Storage task done: {str(result)[:120]}...", "success")
 
             latency_ms = int((time.perf_counter() - start_time) * 1000)
             payload = {

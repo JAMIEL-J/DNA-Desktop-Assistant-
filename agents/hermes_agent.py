@@ -9,7 +9,19 @@ try:
 except Exception:
     web_search = fetch_and_summarize = None
 
+try:
+    from skills import playwright_skill
+except Exception:
+    playwright_skill = None  # type: ignore
+
 logger = logging.getLogger('dna.agent.hermes')
+
+# Verbs that need a live browser (Playwright MCP), not just search/scrape.
+_AUTOMATION_KEYWORDS = (
+    'click', 'fill', 'type into', 'press key', 'press enter',
+    'automate', 'browser automation', 'take snapshot', 'page snapshot',
+    'select option', 'fill form', 'submit form',
+)
 
 class HermesAgent(AgentBase):
     """HERMES — Web & Browser Agent.
@@ -23,7 +35,55 @@ class HermesAgent(AgentBase):
 
     def diagnose(self) -> dict:
         status = "ready" if web_search else "degraded"
-        return {"status": status, "detail": f"HERMES web agent is {status}."}
+        detail = f"HERMES web agent is {status}."
+        try:
+            if playwright_skill is not None and playwright_skill.is_playwright_available():
+                detail += " Playwright browser automation ready."
+        except Exception:
+            pass
+        return {"status": status, "detail": detail}
+
+    @staticmethod
+    def _is_browser_automation(task_lower: str, context: dict | None) -> bool:
+        """True when the task needs a live browser, not just search/scrape."""
+        if (context or {}).get("playwright_action"):
+            return True
+        return any(k in task_lower for k in _AUTOMATION_KEYWORDS)
+
+    def _execute_browser_automation(self, task: str, context: dict | None) -> str:
+        """Run one Playwright step: direct action from context, else open+observe.
+
+        Multi-step flows compose across turns: navigate+snapshot first so the
+        next turn has element refs for click/type. Never invents refs.
+        """
+        import re
+        ctx = context or {}
+        if playwright_skill is None:
+            return "Browser automation is unavailable (playwright skill failed to load)."
+
+        action = ctx.get("playwright_action")
+        if action:
+            fn = getattr(playwright_skill, str(action), None)
+            if not callable(fn):
+                return f"Sorry boss, I don't know the browser action '{action}'."
+            self.log_event(f"Playwright action: {action}", "info")
+            try:
+                return str(fn(**(ctx.get("playwright_args") or {})))
+            except TypeError as e:
+                return f"Sorry boss, that browser action needs different details: {e}"
+
+        url_match = re.search(r'https?://[^\s\'")]+', task or "")
+        if url_match and playwright_skill.is_playwright_available():
+            url = url_match.group(0)
+            self.log_event(f"Opening {url} in automated browser.", "info")
+            nav = playwright_skill.browser_navigate(url)
+            snap = playwright_skill.browser_snapshot()
+            return (f"{nav}\n\nLive page snapshot — tell me what to click or fill "
+                    f"next, boss:\n{snap}")
+        if "snapshot" in (task or "").lower():
+            return playwright_skill.browser_snapshot()
+        return ("Tell me which page to open first, boss — e.g. "
+                "'open https://example.com and click login'.")
 
     def execute(self, task: str, context: dict = None) -> BlackboardMessage:
         self.transition(AgentState.BUSY)
@@ -37,6 +97,9 @@ class HermesAgent(AgentBase):
             task_lower = (task or "").lower()
             if any(greeting in task_lower for greeting in ['hello', 'hi', 'hey', 'status', 'who are you']) and len(task.split()) <= 4:
                 result = "Hello boss! HERMES web agent online and ready for search or web intelligence tasks."
+            elif self._is_browser_automation(task_lower, context):
+                self.log_event("Routing to Playwright browser automation.", "info")
+                result = self._execute_browser_automation(task, context)
             else:
                 url = (context or {}).get("url")
                 if url and fetch_and_summarize:

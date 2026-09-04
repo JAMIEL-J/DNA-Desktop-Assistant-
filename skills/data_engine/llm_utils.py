@@ -9,6 +9,10 @@ from config import OLLAMA_MODEL, OLLAMA_URL, OLLAMA_TIMEOUT, GOOGLE_API_KEY, CLO
 
 logger = logging.getLogger('dna.data_engine.llm_utils')
 
+# Per-project privacy switch: when True, skip cloud even with a key set.
+# Set from run_analysis via the `local_only` session flag ("use local only").
+FORCE_LOCAL = False
+
 
 def _extract_code_from_response(raw: str) -> str:
     """Strip LLM reasoning/thinking text and extract only executable code.
@@ -117,8 +121,8 @@ def _extract_code_from_response(raw: str) -> str:
 def _call_llm_for_code(prompt: str) -> str:
     """Call Google API or Ollama to generate raw SQL or Python code."""
     try:
-        # Cloud path
-        if GOOGLE_API_KEY:
+        # Cloud path (skipped in local-only mode)
+        if GOOGLE_API_KEY and not FORCE_LOCAL:
             genai = importlib.import_module('google.genai')
 
             client = genai.Client(api_key=GOOGLE_API_KEY)
@@ -159,7 +163,7 @@ def call_llm_for_json(prompt: str, schema: dict | None = None) -> dict:
     forcing generic JSON mode.
     """
     try:
-        if GOOGLE_API_KEY:
+        if GOOGLE_API_KEY and not FORCE_LOCAL:
             genai = importlib.import_module('google.genai')
             client = genai.Client(api_key=GOOGLE_API_KEY)
 

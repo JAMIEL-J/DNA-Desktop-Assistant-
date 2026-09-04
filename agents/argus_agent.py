@@ -5,9 +5,14 @@ from core.agent_base import AgentBase, AgentState
 from core.blackboard import Blackboard, BlackboardMessage
 
 try:
-    from skills.screen_skill import read_screen, describe_screen, find_error
+    from skills.screen_skill import read_screen, describe_screen
 except Exception:
-    read_screen = describe_screen = find_error = None
+    read_screen = describe_screen = None
+
+try:
+    from skills.screen_skill import find_error_on_screen as find_error
+except Exception:
+    find_error = None
 
 logger = logging.getLogger('dna.agent.argus')
 

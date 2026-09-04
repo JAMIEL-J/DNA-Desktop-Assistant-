@@ -92,10 +92,12 @@ export default function App() {
       }
     } else if (msg.type === 'log' && msg.payload) {
       const { agentName, message, level } = msg.payload;
+      // NEXUS orchestrator messages land in the JARVIS terminal (no separate NEXUS window).
+      const key = (agentName || '').toLowerCase() === 'nexus' ? 'jarvis' : (agentName || '').toLowerCase();
       if (message) {
         setAgents((prev) =>
           prev.map((ag) => {
-            if (ag.name.toLowerCase() === (agentName || '').toLowerCase() || ag.role.toLowerCase() === (agentName || '').toLowerCase()) {
+            if (ag.name.toLowerCase() === key || ag.role.toLowerCase() === key) {
               return {
                 ...ag,
                 logs: [...ag.logs, { id: `log-${Date.now()}-${Math.random()}`, timestamp: timeStr, message, level: level || 'info' }]

@@ -63,15 +63,22 @@ class QueryEngine:
                     except Exception:
                         df_latin = pd.read_csv(path, encoding='latin1', on_bad_lines='skip')
                         con.register("data_table", df_latin)
+            elif ext == '.parquet':
+                try:
+                    con.execute(f"CREATE TEMPORARY VIEW data_table AS SELECT * FROM read_parquet('{path_escaped}')")
+                except Exception:
+                    df_parquet = pd.read_parquet(path)
+                    con.register("data_table", df_parquet)
             else:
-                df_temp = pd.read_excel(path)
+                _sheet = profile.get('sheet_used')
+                df_temp = pd.read_excel(path, sheet_name=_sheet if _sheet is not None else 0)
                 con.register("data_table", df_temp)
 
             # Attempt 1: Generate SQL -> Execute
             sql = self._generate_sql(question, profile)
             result = self._try_duckdb(con, sql)
             if result is not None:
-                return {'result_df': result, 'sql': sql, 'method': 'duckdb'}
+                return {'result_df': result, 'sql': sql, 'method': 'duckdb', 'sampled': False}
 
             # Attempt 2: Error recovery loop
             for retry in range(self.MAX_RETRIES):
@@ -80,7 +87,7 @@ class QueryEngine:
                 sql = self._regenerate_sql(question, profile, sql, error_msg)
                 result = self._try_duckdb(con, sql)
                 if result is not None:
-                    return {'result_df': result, 'sql': sql, 'method': 'duckdb'}
+                    return {'result_df': result, 'sql': sql, 'method': 'duckdb', 'sampled': False}
         except Exception as e:
             logger.error('DuckDB setup/execution failed: %s', e)
             self._last_error = str(e)
@@ -177,6 +184,7 @@ class QueryEngine:
     def _try_pandas(self, path: str, question: str, profile: dict) -> dict:
         """Fallback to Pandas NL2Py if SQL execution fails."""
         logger.info('DuckDB SQL failed or fell back. Attempting Pandas NL2Py.')
+        sampled = (profile or {}).get('row_count', 0) > 100000
         try:
             ext = Path(path).suffix.lower()
             row_count = profile.get('row_count', 0)
@@ -188,8 +196,11 @@ class QueryEngine:
                         df = pd.read_csv(path)
                     except Exception:
                         df = pd.read_csv(path, encoding='latin1', on_bad_lines='skip')
+                elif ext == '.parquet':
+                    df = pd.read_parquet(path)
                 else:
-                    df = pd.read_excel(path)
+                    _sheet = profile.get('sheet_used')
+                    df = pd.read_excel(path, sheet_name=_sheet if _sheet is not None else 0)
             else:
                 logger.warning('Large file detected (%d rows) for Pandas fallback, loading sample.', row_count)
                 con = duckdb.connect()
@@ -197,8 +208,11 @@ class QueryEngine:
                     path_escaped = path.replace("'", "''")
                     if ext == '.csv':
                         df = con.execute(f"SELECT * FROM read_csv_auto('{path_escaped}') USING SAMPLE 10000").fetchdf()
+                    elif ext == '.parquet':
+                        df = con.execute(f"SELECT * FROM read_parquet('{path_escaped}') USING SAMPLE 10000").fetchdf()
                     else:
-                        df_full = pd.read_excel(path)
+                        _sheet = profile.get('sheet_used')
+                        df_full = pd.read_excel(path, sheet_name=_sheet if _sheet is not None else 0)
                         df = df_full.sample(n=min(10000, len(df_full)))
                 finally:
                     con.close()
@@ -245,9 +259,9 @@ class QueryEngine:
                     result_df = res.to_frame()
                 else:
                     result_df = pd.DataFrame({'answer': [res]})
-                return {'result_df': result_df, 'sql': '', 'method': 'pandas'}
+                return {'result_df': result_df, 'sql': '', 'method': 'pandas', 'sampled': sampled}
             else:
                 raise ValueError("Python code executed but 'result' variable not found")
         except Exception as e:
             logger.error('Pandas analysis failed: %s', e)
-            return {'result_df': pd.DataFrame(), 'sql': '', 'method': 'pandas'}
+            return {'result_df': pd.DataFrame(), 'sql': '', 'method': 'pandas', 'sampled': sampled}

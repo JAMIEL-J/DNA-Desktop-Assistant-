@@ -3,6 +3,7 @@
 import datetime
 import logging
 import os
+import re
 from pathlib import Path
 
 from config import ANALYSIS_OUTPUT_DIR
@@ -164,14 +165,93 @@ def _format_query_log(profiler_queries: list, engine_query: str = None) -> str:
     return "\n".join(lines)
 
 
-def run_analysis(path: str, question: str) -> str:
+_SIMPLE_Q = re.compile(r'\b(total|sum|average|avg|mean|count|how many|max|maximum|min|minimum|top|highest|lowest|summary|kpi)\b', re.I)
+_MONEY_Q = re.compile(r'\b(sales|revenue|profit|price|cost|salary|amount|balance|spend|expense|margin|payment)\b', re.I)
+
+
+def _fmt_num(value, money: bool) -> str:
+    """Human number: commas, $ when the question smells like money."""
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if money:
+        return f"${f:,.0f}" if f.is_integer() else f"${f:,.2f}"
+    if f.is_integer():
+        return f"{int(f):,}"
+    return f"{f:,.2f}"
+
+
+def _summarize_instant(question: str, result_df) -> str | None:
+    """Zero-model-call narration for small factual results (instant lane).
+
+    Returns None when the shape/question needs the LLM narrator.
+    """
+    try:
+        if result_df is None or result_df.empty:
+            return None
+        if len(result_df) > 12 or result_df.shape[1] > 4:
+            return None
+        if not _SIMPLE_Q.search(question or ''):
+            return None
+        money = bool(_MONEY_Q.search(question or ''))
+        cols = [str(c).replace('_', ' ') for c in result_df.columns]
+        follow = "Want me to slice this another way, boss?"
+        if result_df.shape == (1, 1):
+            return f"{cols[0]} is {_fmt_num(result_df.iloc[0, 0], money)}, boss. {follow}"
+        if len(result_df) == 1:
+            bits = [f"{c} {_fmt_num(v, money)}" for c, v in zip(cols, list(result_df.iloc[0]))][:4]
+            return f"Here it is, boss: " + ", ".join(bits) + f". {follow}"
+        if result_df.shape[1] == 2:
+            import pandas as pd
+            vals = pd.to_numeric(result_df.iloc[:, 1], errors='coerce')
+            if vals.notna().all():
+                head = [f"{r.iloc[0]} at {_fmt_num(r.iloc[1], money)}" for _, r in result_df.head(3).iterrows()]
+                top0, top1 = result_df.iloc[0].iloc[0], result_df.iloc[0].iloc[1]
+                out = f"{top0} leads with {_fmt_num(top1, money)}, boss"
+                if len(head) > 1:
+                    out += ": " + ", ".join(head[1:])
+                if len(result_df) > 1:
+                    out += f". Total {_fmt_num(vals.sum(), money)}"
+                return out + f". {follow}"
+        return None
+    except Exception:
+        return None
+
+
+def _strip_export_intent(question: str) -> str:
+    """Remove export wording so SQL generation sees the analysis, not the export.
+
+    Without this, 'export avg salary to csv' makes the LLM emit COPY...TO
+    STDOUT, which 'runs' but returns a row-count frame — and that count is
+    what got saved. (Live export bug, 2026-09-04.)
+    """
+    q = re.sub(r'\b(export|save|download)\b', '', question or '', flags=re.I)
+    q = re.sub(r'\bto\s+(csv|excel|parquet|xlsx|xls|file)\b', '', q, flags=re.I)
+    q = re.sub(r'\s+', ' ', q).strip()
+    return q or question
+
+
+def _extractive_summary(profile: dict, findings: list[dict], domain_name: str) -> str:
+    """Model-free executive summary from computed stats (local-only deep lane)."""
+    rows = profile.get('row_count', 0)
+    cols = profile.get('column_count', 0)
+    qual = profile.get('quality_score', 0.0)
+    top = [f.get('detail', '') for f in (findings or [])[:2] if f.get('detail')]
+    text = (f"{domain_name} dataset profiled: {rows:,} rows, {cols} columns, "
+            f"quality {qual:.0f} percent, boss. ")
+    text += ("Key findings: " + "; ".join(top) + ".") if top else "No major anomalies detected."
+    return text
+
+
+def run_analysis(path: str, question: str, sheet: str | int | None = None) -> str:
     """Full analysis entry point routing requests based on mode (Phase 2 & 3)."""
     logger.info('Running analysis for: %s with question: %s', path, question)
 
     # Speak verbal status cue to keep user engaged
     try:
         from pipeline.tts import speak
-        speak("Running the SQL code for the dataset, sir. Analyzing the KPIs...")
+        speak("Running the numbers on the dataset, boss. Crunching the KPIs...")
     except Exception as e:
         logger.debug("TTS status update failed: %s", e)
 
@@ -188,13 +268,46 @@ def run_analysis(path: str, question: str) -> str:
     detector = PatternDetector()
     router = OutputRouter()
 
-    # 1. Output routing classification
+    # 1. Output routing classification (deep intent wins over export wording:
+    #    "export a full report" means the report, which lives on disk anyway)
     mode = router.classify(question)
 
-    # 2. Setup profile and anomalies
-    profile = profiler.profile(path)
-    findings = detector.detect(profile, profiler.last_sample_df)
+    # 2. Session-cached profile: follow-ups skip re-profiling when the file
+    #    hash is unchanged (previously every question paid full profiling).
+    from .session import get_session, session_key_for_request
+    kernel = get_session(session_key_for_request())
+    profile, cache_hit = kernel.get_profile(path, sheet=sheet)
+    if cache_hit:
+        logger.info('Profile cache hit for %s — skipping re-profile.', Path(path).name)
+
+    # Privacy switch: local-only projects skip cloud even with a key set.
+    local_only = False
+    try:
+        from core.session import get as session_get
+        local_only = session_get('local_only', None)
+        if local_only is None:
+            from pipeline.memory import get_preference
+            local_only = get_preference('local_only') == '1'
+        local_only = bool(local_only)
+        from . import llm_utils as _llu
+        _llu.FORCE_LOCAL = local_only
+        if local_only:
+            logger.info('Local-only mode: cloud LLM disabled for this run.')
+    except Exception:
+        pass
+    findings = detector.detect(profile, kernel.samples.get(path))
     dataset_id = catalog.register_dataset(path, profile)
+
+    # Sheet honesty: say which tab is loaded when workbooks have several.
+    sheet_note = ""
+    sheets = profile.get('sheets') or []
+    if sheets:
+        used = profile.get('sheet_used', sheets[0])
+        if len(sheets) > 1:
+            sheet_note = (f"Note: this workbook has {len(sheets)} tabs "
+                          f"({', '.join(sheets[:6])}); I loaded '{used}', boss. ")
+    if sheet_note:
+        logger.info('Sheet note: %s', sheet_note)
 
     # 3. Route based on mode
     if mode == OutputMode.VOICE_ONLY:
@@ -202,13 +315,23 @@ def run_analysis(path: str, question: str) -> str:
         engine = QueryEngine()
         res = engine.execute(path, question, profile)
         result_df = res['result_df']
-        sql = res['sql']
+        sql = res.get('sql', '')
+        kernel.log_turn(question, sql, len(result_df))
+
+        sampled_note = ""
+        if res.get('sampled'):
+            sampled_note = " (Based on a 10,000-row sample of the full file, boss.)"
 
         if result_df.empty:
             result_summary = "The query ran fine but returned no matching data."
         else:
-            result_summary = _summarize_for_voice(question, result_df)
+            # Instant lane: small factual results narrate from templates with
+            # zero model calls (~1s). Anything richer falls back to the LLM.
+            result_summary = _summarize_instant(question, result_df) or \
+                _summarize_for_voice(question, result_df)
+            result_summary = result_summary.rstrip() + sampled_note
 
+        result_summary = (sheet_note + result_summary) if sheet_note else result_summary
         catalog.log_analysis(
             dataset_id=dataset_id,
             question=question,
@@ -217,8 +340,9 @@ def run_analysis(path: str, question: str) -> str:
             generated_sql=sql,
             findings_json=findings
         )
+        # Spoken answer first, audit trail after (was reversed: TTS wore the SQL dump).
         query_log_md = _format_query_log(profiler.query_log, sql)
-        return f"{query_log_md}{result_summary}"
+        return f"{result_summary}\n{query_log_md}" if query_log_md else result_summary
 
     elif mode == OutputMode.DEEP_REPORT:
         from .analyst import DataAnalyst
@@ -228,6 +352,15 @@ def run_analysis(path: str, question: str) -> str:
         from .semantic_resolver import SemanticColumnResolver
         from .domain_classifier import DomainClassifier
         from .chart_planner import DomainChartPlanner
+
+        def _cue(text):
+            try:
+                from pipeline.tts import speak
+                speak(text)
+            except Exception as e:
+                logger.debug("Deep progress cue failed: %s", e)
+
+        _cue("Profiled, boss — digging into patterns and drivers.")
 
         # 1. Semantic Column Resolution
         resolver = SemanticColumnResolver()
@@ -241,6 +374,10 @@ def run_analysis(path: str, question: str) -> str:
         # 3. Analyst insights with domain framing & numerical stats
         analyst = DataAnalyst()
         insights = analyst.analyze(profile, findings, question, domain_info)
+        if local_only and insights.get('executive_summary', '').startswith("Data profiled successfully, but detailed"):
+            insights['executive_summary'] = _extractive_summary(
+                profile, findings, domain_info.get('domain_name', 'Business'))
+        _cue("Analysis drafted, boss — building your charts.")
 
         # 4. Domain-Aware Dynamic SQL Chart Aggregations
         planner = DomainChartPlanner()
@@ -248,6 +385,8 @@ def run_analysis(path: str, question: str) -> str:
             profiler.con, profiler.table_ref, profile.get('schema', []), semantics, domain_info, profiler.last_sample_df
         )
 
+
+        _cue("Charts drafted, boss — assembling the dashboard and reports.")
 
         # 5. Setup output folder
         filename_stem = Path(path).stem
@@ -321,6 +460,28 @@ def run_analysis(path: str, question: str) -> str:
         clean_note = f" I also found {clean_count} data quality issues with cleaning recommendations." if clean_count > 0 else ""
         result_summary = f"I have performed a deep {domain_info['domain_name']} analysis of the dataset and generated {len(domain_charts)} dynamic charts and executive insights. Summary: {insights['executive_summary']}{clean_note}"
 
+        # 11. Companion artifacts: markdown + Excel + rerunnable notebook.
+        # Builders never fail the answer — voice delivers regardless.
+        try:
+            from .artifacts import build_markdown, build_excel, build_notebook
+            meta = {'question': question, 'local_only': local_only}
+            made = []
+            if build_markdown(profile, findings, insights, history, output_sub_dir, meta):
+                made.append('markdown')
+            if build_excel(profile, findings, insights, chart_paths, history, output_sub_dir):
+                made.append('Excel')
+            if build_notebook(profile, question, profiler.query_log, history,
+                              output_sub_dir, filename=Path(path).name):
+                made.append('notebook')
+            if made:
+                result_summary += f" I also saved {', '.join(made)} reports, boss."
+                _cue("Dashboard done, boss — Excel, notebook, and notes saved.")
+            else:
+                _cue("Dashboard done, boss.")
+        except Exception as e:
+            logger.warning('Artifact builders failed (voice answer unaffected): %s', e)
+            _cue("Dashboard done, boss.")
+
         catalog.log_analysis(
             dataset_id=dataset_id,
             question=question,
@@ -331,15 +492,17 @@ def run_analysis(path: str, question: str) -> str:
             report_path=report_path
         )
         query_log_md = _format_query_log(profiler.query_log)
-        return f"{query_log_md}{result_summary}"
+        return f"{result_summary}\n{query_log_md}" if query_log_md else result_summary
 
 
     elif mode == OutputMode.EXPORT:
         from .query_engine import QueryEngine
         engine = QueryEngine()
-        res = engine.execute(path, question, profile)
+        # Sanitize: generate SQL for the analysis, not the export wording.
+        res = engine.execute(path, _strip_export_intent(question), profile)
         result_df = res['result_df']
-        sql = res['sql']
+        sql = res.get('sql', '')
+        kernel.log_turn(question, sql, len(result_df))
 
         if result_df.empty:
             return "The query returned no data to export."
@@ -351,6 +514,8 @@ def run_analysis(path: str, question: str) -> str:
         result_df.to_csv(export_path, index=False)
 
         result_summary = f"I have successfully exported the query result to {export_filename}."
+        if sheet_note:
+            result_summary = sheet_note + result_summary
 
         catalog.log_analysis(
             dataset_id=dataset_id,
@@ -361,7 +526,7 @@ def run_analysis(path: str, question: str) -> str:
             report_path=str(export_path.resolve())
         )
         query_log_md = _format_query_log(profiler.query_log, sql)
-        return f"{query_log_md}{result_summary}"
+        return f"{result_summary}\n{query_log_md}" if query_log_md else result_summary
 
     return "Unknown routing classification."
 
@@ -374,7 +539,7 @@ def run_quick_analysis(question: str, keyword: str = "") -> str:
     if not dataset:
         if keyword:
             return f"Sorry, I couldn't find any data file with '{keyword}' in the name on your system."
-        return "Sorry, I couldn't find any CSV or Excel files on your system."
+        return "Sorry, I couldn't find any CSV, Excel, or Parquet files on your system."
 
     filename = Path(dataset['file_path']).name
     result = run_analysis(dataset['file_path'], question)
@@ -442,6 +607,94 @@ def load_dataset(keyword: str = "") -> str:
     """Load a dataset by keyword using fuzzy matching and set active session context."""
     from .dataset_loader import load_dataset_by_keyword
     return load_dataset_by_keyword(keyword)
+
+
+def _resolve_one(ref: str) -> str | None:
+    """A path stays a path; otherwise resolve via catalog keyword search."""
+    ref = (ref or '').strip()
+    if not ref:
+        return None
+    if Path(ref).is_file():
+        return str(Path(ref).resolve())
+    catalog = _get_catalog()
+    hit = catalog.find_dataset(ref)
+    return hit['file_path'] if hit else None
+
+
+def open_datasets(refs: str = "") -> str:
+    """Open several datasets into one shared session (joins run across views).
+
+    Args:
+        refs: comma-separated file paths or keywords, e.g. "sales.csv, products".
+    """
+    from .session import get_session, session_key_for_request
+    parts = [p.strip() for p in (refs or '').replace(';', ',').split(',') if p.strip()]
+    if not parts:
+        return "Boss, tell me which datasets to open — separate names with commas."
+    kernel = get_session(session_key_for_request())
+    opened = []
+    for part in parts:
+        resolved = _resolve_one(part)
+        if not resolved:
+            return f"Boss, I couldn't find a dataset for '{part}'."
+        info = kernel.open_file(resolved)
+        opened.append(f"{Path(resolved).name} as {info['view']}")
+    paths = [kernel.views[v] for v in [i.split(' as ')[-1] for i in opened]]
+    try:
+        from core.session import update as session_update
+        session_update('active_files', paths)
+        session_update('active_file', paths[0])
+    except Exception:
+        pass
+    keys = kernel.suggest_keys()
+    hint = ""
+    exact = [k for k in keys if k.get('match') == 'exact']
+    if exact:
+        hint = " Shared keys I can join on: " + ", ".join(k['key'] for k in exact[:5]) + "."
+    return f"Opened {len(opened)}, boss: " + "; ".join(opened) + "." + hint
+
+
+def suggest_join_keys() -> str:
+    """Propose join keys across the open datasets."""
+    from .session import get_session, session_key_for_request
+    kernel = get_session(session_key_for_request())
+    if len(kernel.views) < 2:
+        return "Boss, open at least two datasets first, then I'll propose join keys."
+    keys = kernel.suggest_keys()
+    if not keys:
+        return "Boss, I found no shared key names across the open datasets."
+    lines = [f"- {k['key']} ({k['match']}): {', '.join(k['refs'])}" for k in keys[:8]]
+    return "Candidate join keys, boss:\n" + "\n".join(lines)
+
+
+def join_datasets(fact: str = "", dim: str = "", fact_key: str = "", dim_key: str = "") -> str:
+    """LEFT-join fact to dimension on a key, with grain validation.
+
+    Reports fanout risk and unmatched rows instead of hiding them.
+    """
+    from .session import get_session, session_key_for_request
+    if not (fact and dim and fact_key):
+        return "Boss, I need the fact file, the dimension file, and the key — e.g. join sales to products on product id."
+    fact_path, dim_path = _resolve_one(fact), _resolve_one(dim)
+    if not fact_path:
+        return f"Boss, I couldn't find the fact dataset '{fact}'."
+    if not dim_path:
+        return f"Boss, I couldn't find the dimension dataset '{dim}'."
+    kernel = get_session(session_key_for_request())
+    f_view = kernel.open_file(fact_path)['view']
+    d_view = kernel.open_file(dim_path)['view']
+    try:
+        rep = kernel.join(f_view, d_view, fact_key, dim_key or None)
+    except Exception as e:
+        logger.warning('Join failed: %s', e)
+        return f"Boss, that join did not run: {str(e)[:200]}"
+    out = (f"Joined {Path(fact_path).name} to {Path(dim_path).name} on '{fact_key}', boss: "
+           f"{rep['fact_rows']:,} fact rows stayed {rep['joined_rows']:,}; "
+           f"{rep['unmatched_fact_rows']:,} found no dimension match. "
+           f"Ask me anything across the joined view '{rep['view']}'.")
+    if rep.get('warning'):
+        out += " Warning: " + rep['warning']
+    return out
 
 
 # Skill module contract

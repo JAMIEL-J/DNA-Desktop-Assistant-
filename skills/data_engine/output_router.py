@@ -28,6 +28,11 @@ class OutputRouter:
         """Classify a question to determine output mode."""
         try:
             q = question.lower().strip()
+            # Deep intent wins: "export a full report" means the report,
+            # which lives on disk anyway — not a CSV dump of one query.
+            if any(kw in q for kw in self.DEEP_KEYWORDS):
+                logger.info('Classified query "%s" as DEEP_REPORT', question)
+                return OutputMode.DEEP_REPORT
             if any(kw in q for kw in self.EXPORT_KEYWORDS):
                 logger.info('Classified query "%s" as EXPORT', question)
                 return OutputMode.EXPORT

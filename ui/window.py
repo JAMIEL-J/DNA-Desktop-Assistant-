@@ -81,11 +81,13 @@ class AssistantWebWindow:
         self._last_active_skill = None
         self._proc_primed = False
         self._running = False
+        self._http_port = None
         self._html_path = Path(__file__).resolve().parent.parent / 'DNA OS UI' / 'dist' / 'index.html'
 
     def start(self):
         self._running = True
         dist_dir = Path(__file__).resolve().parent.parent / 'DNA OS UI' / 'dist'
+        self._http_port = None
         
         # Start lightweight local HTTP server for dist assets
         def _run_http():
@@ -101,6 +103,7 @@ class AssistantWebWindow:
             for port in [5173, 5174, 8080, 8000]:
                 try:
                     with socketserver.TCPServer(('127.0.0.1', port), Handler) as httpd:
+                        self._http_port = port
                         logger.info('UI HTTP server listening on http://127.0.0.1:%d', port)
                         httpd.serve_forever()
                         break
@@ -111,7 +114,14 @@ class AssistantWebWindow:
         self._http_thread = threading.Thread(target=_run_http, daemon=True)
         self._http_thread.start()
 
-        target_url = 'http://127.0.0.1:5173'
+        # Wait briefly for HTTP thread to bind so we open the actual port.
+        import time as _time
+        for _ in range(20):
+            if self._http_port is not None:
+                break
+            _time.sleep(0.05)
+
+        target_url = f'http://127.0.0.1:{self._http_port or 5173}'
         
         # Explicitly attempt Chrome launcher first
         from config import APP_ALIASES

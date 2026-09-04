@@ -22,6 +22,15 @@ def classify(command: str) -> str:
     if any(agent in cmd_lower for agent in agent_names) or 'status' in cmd_lower or 'agents' in cmd_lower or 'report' in cmd_lower:
         return 'B'
 
+    # Browser-automation verbs need the live browser (NEXUS -> HERMES -> Playwright),
+    # never the deterministic regex path (e.g. "open ... and click ..." must not
+    # hit the generic open_app catch-all).
+    automation_verbs = ['playwright', 'automate', 'browser automation', 'click the', 'click on',
+                        'fill form', 'fill the form', 'type into', 'press key', 'take snapshot',
+                        'page snapshot', 'select option']
+    if any(verb in cmd_lower for verb in automation_verbs):
+        return 'B'
+
     for pattern in CATEGORY_A_PATTERNS:
         if pattern.search(command):
             return 'A'

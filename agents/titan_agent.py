@@ -29,15 +29,28 @@ class TitanAgent(AgentBase):
         start_time = time.perf_counter()
 
         logger.info("[%s] Executing system command: %r", self.agent_id, task)
+        self.log_event(f"Executing system command: '{task}'", "info")
 
         try:
-            tool_name = (context or {}).get("tool_name")
-            tool_args = (context or {}).get("tool_args", {})
-            
-            if tool_name and tool_name in SYSTEM_TOOLS:
-                result = SYSTEM_TOOLS[tool_name](**tool_args)
+            refused = (context or {}).get("refused_dangerous")
+            if refused:
+                try:
+                    from core.safety import get_danger_warning
+                    result = get_danger_warning(refused)
+                except Exception:
+                    result = (f"Boss, '{refused}' needs voice confirmation. "
+                              f"Say it plainly and confirm when asked.")
             else:
-                result = f"Command '{task}' processed by TITAN system agent."
+                tool_name = (context or {}).get("tool_name")
+                tool_args = (context or {}).get("tool_args", {})
+
+                if tool_name and tool_name in SYSTEM_TOOLS:
+                    result = SYSTEM_TOOLS[tool_name](**tool_args)
+                else:
+                    result = (f"Boss, I couldn't map '{task}' to a system action. "
+                              f"Try volume, brightness, mute, opening or closing an app by name.")
+
+            self.log_event(f"System action done: {str(result)[:120]}...", "success")
 
             latency_ms = int((time.perf_counter() - start_time) * 1000)
             payload = {

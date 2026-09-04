@@ -9,10 +9,13 @@ from skills.data_engine import run_analysis, run_quick_analysis, recall_recent_d
 logger = logging.getLogger('dna.skill.data')
 
 
-def analyze_data(path: str, question: str) -> str:
+def analyze_data(path: str, question: str, sheet: str | None = None) -> str:
     """Analyze a local data file. Delegates to data engine."""
     logger.info('data_skill delegating analyze_data to data_engine')
-    return run_analysis(path=path, question=question)
+    kwargs = {'path': path, 'question': question}
+    if sheet:
+        kwargs['sheet'] = sheet
+    return run_analysis(**kwargs)
 
 
 def quick_analyze(question: str = "Give me a summary", keyword: str = "") -> str:
@@ -33,9 +36,30 @@ def load_dataset_tool(keyword: str = "") -> str:
     return load_dataset(keyword=keyword)
 
 
+def open_datasets_tool(refs: str = "") -> str:
+    """Open several datasets into one shared session for joins."""
+    from skills.data_engine import open_datasets
+    return open_datasets(refs=refs)
+
+
+def suggest_join_keys_tool() -> str:
+    """Propose join keys across the open datasets."""
+    from skills.data_engine import suggest_join_keys
+    return suggest_join_keys()
+
+
+def join_datasets_tool(fact: str = "", dim: str = "", fact_key: str = "", dim_key: str = "") -> str:
+    """LEFT-join fact to dimension on a key, with grain validation."""
+    from skills.data_engine import join_datasets
+    return join_datasets(fact=fact, dim=dim, fact_key=fact_key, dim_key=dim_key)
+
+
 TOOLS = {
     'analyze_data': analyze_data,
     'quick_analyze': quick_analyze,
     'recall_data': recall_data,
     'load_dataset': load_dataset_tool,
+    'open_datasets': open_datasets_tool,
+    'suggest_join_keys': suggest_join_keys_tool,
+    'join_datasets': join_datasets_tool,
 }

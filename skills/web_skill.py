@@ -225,7 +225,7 @@ def web_search(query: str) -> str:
 
     except Exception as e:
         logger.error("web_search failed: %s", e)
-        return f"Sorry sir, the web search failed: {str(e)}"
+        return f"Sorry boss, the web search failed: {str(e)}"
 
 
 def fetch_and_summarize(url: str) -> str:

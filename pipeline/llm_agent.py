@@ -33,7 +33,7 @@ from core.safety import (
     is_command_dangerous,
     get_danger_warning,
 )
-from pipeline.plan_executor import execute_plan, invoke_tool
+from pipeline.plan_executor import execute_plan, invoke_tool, store_pending_plan, has_pending_plan
 from pipeline.memory import get_preferences
 from core.personality import get_system_prompt, humanize_response
 
@@ -115,6 +115,14 @@ def _build_system_prompt(tool_names: list[str]) -> str:
         'If the user wants you to write code, text, or scripts into an editor or window (such as VS Code, Claude, or the active screen), '
         'use the typing tools (like type_into_vscode, type_into_claude, or type_text) and generate the full, actual code/text '
         'to pass as the "text" argument. '
+        'To operate any desktop app generically use ensure_app_open, focus_app_window, press_hotkey, and focus_and_type '
+        '(open-if-needed, then focus, then drive via keyboard — never invent window titles or hotkeys). '
+        'Use find_folder to locate on-disk folders by spoken name (it searches every drive); '
+        'pass the returned full path verbatim into open dialogs. '
+        'To drive web pages use the browser_* tools (navigate, snapshot for refs, then click/type/fill). '
+        'Paths described as belonging to another app\'s project (e.g. "in Antigravity", "in my VS Code project", '
+        '"/tests in the project") must be passed VERBATIM into typed prompts or text — NEVER pass them to '
+        'list_files or open_folder, which resolve DNA-local folders only. '
         'If the user is asking a general knowledge question, conversational query, or wants information (not a system action), '
         'use {"tool":"chat","args":{"question":"the user question"}}. '
         'If unclear, return '
@@ -176,6 +184,19 @@ def _build_system_prompt(tool_names: list[str]) -> str:
                 f'(e.g., about rows, columns, values, averages, counts, etc.), '
                 f'use {{"tool":"analyze_data","args":{{"path":"{active_file}","question":"the user question"}}}}.\n\n'
             )
+    except Exception:
+        pass
+
+    # Inject active project context (instructions + memory notes)
+    try:
+        from core.projects import get_active_project, read_context_section
+        active_project = get_active_project()
+        if active_project:
+            section = read_context_section(active_project)
+            if section:
+                base_prompt += f'ACTIVE PROJECT [{active_project}]:\n{section}\n\n'
+            else:
+                base_prompt += f'ACTIVE PROJECT [{active_project}]: no notes yet.\n\n'
     except Exception:
         pass
 
@@ -294,7 +315,15 @@ def handle_complex_command(command: str, tool_map: dict[str, Any]) -> str:
         decision = _call_llm(command, tool_names)
 
         if 'plan' in decision and isinstance(decision['plan'], list):
-            return humanize_response(execute_plan(decision['plan'], tool_map))
+            plan = decision['plan']
+            try:
+                from core.session import get as session_get
+                plan_mode = session_get('plan_mode', True)
+            except Exception:
+                plan_mode = True
+            if plan_mode and len(plan) > 1 and not has_pending_plan():
+                return humanize_response(store_pending_plan(plan))
+            return humanize_response(execute_plan(plan, tool_map))
 
         tool_name = str(decision.get('tool', 'unknown')).strip()
         raw_args = decision.get('args')

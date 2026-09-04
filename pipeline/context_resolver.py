@@ -72,7 +72,9 @@ def resolve_pronouns(command: str) -> str:
                     bb = get_global_blackboard()
                     history = bb.get_recent_history(1)
                     if history:
-                        target = f"the recent {history[0].get('agent_id')} result ({history[0].get('result')})"
+                        # Keep a short agent reference only. Previously inlined the
+                        # full 300ch result text which blew up routing/LLM prompts.
+                        target = f"the recent {history[0].get('agent_id')} result"
                 except Exception:
                     pass
 

@@ -4,12 +4,14 @@ import logging
 import threading
 
 # 2. internal
-from core.blackboard import Blackboard, BlackboardMessage
+from core.blackboard import Blackboard, BlackboardMessage, get_global_blackboard
 
 logger = logging.getLogger('dna.session')
 
-# Instantiate the global Blackboard
-_bb = Blackboard()
+# Use the single global Blackboard to avoid split-brain with context_resolver/NEXUS.
+# Previously this module owned a second Blackboard() instance, so pronoun
+# resolution (global) missed router-spawned NEXUS history (session instance).
+_bb = get_global_blackboard()
 
 # Seed default states
 DEFAULT_STATE = {
@@ -25,10 +27,12 @@ DEFAULT_STATE = {
     'mic_level': 0.0,
     'is_running': True,
     'suppress_next_tts': False,
+    'active_project': None,
+    'plan_mode': True,
 }
 
 for k, v in DEFAULT_STATE.items():
-    _bb._state[k] = v
+    _bb._state.setdefault(k, v)
 
 
 def update(key: str, value) -> None:

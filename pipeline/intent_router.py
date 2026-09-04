@@ -94,44 +94,30 @@ def _check_confirmation(command: str) -> Optional[str]:
     # Handle common STT slips for confirmation words.
     cleaned = cleaned.replace('confirmm', 'confirm').replace('llock', 'lock')
 
-    # ── Cancellation phrases ──
-    cancel_patterns = [
-        re.compile(r'\bcancel\b', re.I),
-        re.compile(r'\bno\b', re.I),
-        re.compile(r'\bnope\b', re.I),
-        re.compile(r'\bstop\b', re.I),
-        re.compile(r'\babort\b', re.I),
-        re.compile(r'\bnever\s+mind\b', re.I),
-        re.compile(r'\bdo\s+not\b', re.I),
-        re.compile(r'\bdon\s*t\b', re.I),
-        re.compile(r'\bnegative\b', re.I),
-        re.compile(r'\bforget\s+it\b', re.I),
-        re.compile(r'\bskip\b', re.I),
-    ]
-    if any(pattern.search(cleaned) for pattern in cancel_patterns):
+    # Only standalone replies count as generic yes/no.
+    # Previously any substring (e.g. "stop music" containing "stop")
+    # hijacked a pending dangerous confirmation.
+    is_explicit_confirm = bool(re.search(r'\bconfirm\s+(shutdown|restart|lock|kill)\b', cleaned))
+    _CANCEL_EXACT = {
+        'cancel', 'no', 'nope', 'stop', 'abort', 'never mind',
+        'do not', 'dont', 'negative', 'forget it', 'skip',
+        'cancel that', 'stop that', 'no thanks', 'no thank you',
+    }
+    _CONFIRM_EXACT = {
+        'confirm', 'yes', 'yeah', 'yep', 'sure', 'go ahead',
+        'do it', 'proceed', 'okay', 'ok', 'affirmative',
+        'yes please', 'sure thing', 'confirm shutdown',
+        'confirm restart', 'confirm lock', 'confirm kill',
+    }
+
+    # ── Cancellation phrases (exact match only) ──
+    if cleaned in _CANCEL_EXACT:
         logger.info('User cancelled pending: %s', pending_tool)
         _clear_pending()
         return humanize_response('No problem, I\'ve cancelled that for you.')
 
-    # ── Confirmation phrases ──
-    confirm_patterns = [
-        re.compile(r'\bconfirm\b', re.I),
-        re.compile(r'\byes\b', re.I),
-        re.compile(r'\byeah\b', re.I),
-        re.compile(r'\byep\b', re.I),
-        re.compile(r'\bsure\b', re.I),
-        re.compile(r'\bgo\s+ahead\b', re.I),
-        re.compile(r'\bdo\s+it\b', re.I),
-        re.compile(r'\bproceed\b', re.I),
-        re.compile(r'\bokay\b', re.I),
-        re.compile(r'\bok\b', re.I),
-        re.compile(r'\baffirmative\b', re.I),
-        re.compile(r'\bconfirm\s+shutdown\b', re.I),
-        re.compile(r'\bconfirm\s+restart\b', re.I),
-        re.compile(r'\bconfirm\s+lock\b', re.I),
-        re.compile(r'\bconfirm\s+kill\b', re.I),
-    ]
-    if any(pattern.search(cleaned) for pattern in confirm_patterns):
+    # ── Confirmation phrases (exact or explicit confirm <tool>) ──
+    if is_explicit_confirm or cleaned in _CONFIRM_EXACT:
         tool_name = pending_tool
         args = _pending_confirmation['args']
         _clear_pending()
@@ -152,9 +138,9 @@ def _check_confirmation(command: str) -> Optional[str]:
                 return humanize_response(f'Could not execute {tool_name}: {str(e)}')
         return humanize_response(f'Tool {tool_name} not found.')
 
-    # Command is unrelated — clear pending and process normally
-    logger.info('Unrelated command while pending — clearing pending: %s', pending_tool)
-    _clear_pending()
+    # Command is unrelated — keep pending (expires via timeout) and process normally.
+    # Previously cleared silently, losing the user's dangerous-action context.
+    logger.info('Unrelated command while pending (%s) — keeping pending, routing normally.', pending_tool)
     return None
 
 
@@ -498,6 +484,28 @@ def _check_workflow(command: str) -> Optional[str]:
     return None
 
 
+def match_simple_intent(command: str) -> tuple | None:
+    """Match a command against SIMPLE_INTENTS without executing anything.
+
+    Returns (tool_name, args) for the first match, else None. Used by
+    agents (e.g. TITAN) that need to translate free text into a tool call.
+    """
+    cleaned = (command or "").strip().lower()
+    if not cleaned:
+        return None
+    for pattern, tool_name, arg_extractor in SIMPLE_INTENTS:
+        try:
+            match = pattern.search(cleaned)
+        except Exception:
+            continue
+        if match:
+            try:
+                return tool_name, arg_extractor(match)
+            except Exception:
+                continue
+    return None
+
+
 def is_dismiss_command(text: str) -> bool:
     """Return True if the command asks DNA to leave active session mode."""
     if not text or not text.strip():
@@ -506,6 +514,85 @@ def is_dismiss_command(text: str) -> bool:
     cleaned = re.sub(r'[^a-z0-9\s]', ' ', cleaned)
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
     return any(pattern.search(cleaned) for pattern in DISMISS_PATTERNS)
+
+
+# ════════════════════════════════════════════════════════════════════
+# Project Commands — Cowork-style persistent workspaces
+# ════════════════════════════════════════════════════════════════════
+
+def _check_project_command(command: str) -> Optional[str]:
+    """Handle start/switch/list/close/note/plan-mode commands.
+
+    Returns a response string when matched, else None.
+    """
+    from core.session import update as session_update
+
+    m = re.search(r'\b(?:start|open|switch to|change to|change project to)\s+project\s+([a-z0-9][a-z0-9\-_ ]{0,39})', command)
+    if m:
+        raw = m.group(1).strip()
+        try:
+            from core.projects import set_active_project
+            clean = set_active_project(raw)
+            session_update('active_skill', 'sys')
+            return humanize_response(f"Project {clean} is ready, boss. Everything we do now stays in this workspace.")
+        except ValueError:
+            return humanize_response("Boss, that project name did not work. Use letters, numbers, and dashes.")
+
+    if re.search(r'\b(?:list|show|what are)\s+(?:my\s+)?projects\b', command):
+        from core.projects import list_projects
+        names = list_projects()
+        if not names:
+            return humanize_response("Boss, there are no projects yet. Say start project followed by a name.")
+        return humanize_response("Your projects, boss: " + ", ".join(names) + ".")
+
+    if re.search(r'\b(?:close|exit|leave)\s+project\b', command):
+        from core.projects import set_active_project
+        set_active_project(None)
+        return humanize_response("Closed the project, boss. Back in global mode.")
+
+    m = re.search(r'\b(?:note to project|remember in this project|note for this project)\s*[:\-]?\s*(.+)', command)
+    if m:
+        text = m.group(1).strip()
+        try:
+            from core.projects import get_active_project, append_memory
+            active = get_active_project()
+            if not active:
+                return humanize_response("Boss, start a project first, then I will keep notes in it.")
+            if not text:
+                return humanize_response("Boss, what should I note down in this project?")
+            append_memory(active, text)
+            return humanize_response(f"Noted in {active}, boss.")
+        except ValueError:
+            return humanize_response("Boss, that project name did not work.")
+
+    m = re.search(r'\bplan mode\s+(on|off)\b', command)
+    if m:
+        session_update('plan_mode', m.group(1) == 'on')
+        state = 'on' if m.group(1) == 'on' else 'off'
+        return humanize_response(f"Plan mode {state}, boss.")
+
+    m = re.search(r'\b(?:use\s+)?local[\s\-]?only\s+(on|off)\b', command)
+    if m:
+        flag = m.group(1) == 'on'
+        session_update('local_only', flag)
+        try:
+            from pipeline.memory import save_preference
+            save_preference('local_only', '1' if flag else '0')
+        except Exception:
+            pass
+        state = 'on — cloud model off, templates and local only' if flag else 'off — cloud model back on'
+        return humanize_response(f"Local-only mode {state}, boss.")
+
+    if re.search(r'\buse\s+cloud\b', command):
+        session_update('local_only', False)
+        try:
+            from pipeline.memory import save_preference
+            save_preference('local_only', '0')
+        except Exception:
+            pass
+        return humanize_response("Cloud model back on, boss.")
+
+    return None
 
 
 
@@ -519,10 +606,39 @@ def is_dismiss_command(text: str) -> bool:
 # Context Bridge — Feed skill results into chat memory for follow-ups
 # ════════════════════════════════════════════════════════════════════
 
+# ════════════════════════════════════════════════════════════════════
+# Skill → Agent attribution for UI terminal logs.
+# Direct skill executions (regex path, interceptors) run no agent, so
+# without this their results never appear in any agent terminal.
+# ════════════════════════════════════════════════════════════════════
+_AGENT_FOR_SKILL = {
+    'sys': 'TITAN', 'app_operator': 'TITAN',
+    'org': 'VANGUARD', 'file': 'VANGUARD',
+    'jobs': 'FORGE', 'career_ops': 'FORGE',
+    'data': 'CIPHER',
+    'chat': 'JARVIS', 'memory': 'JARVIS', 'learning': 'JARVIS',
+    'web': 'HERMES', 'browser': 'HERMES', 'playwright': 'HERMES',
+    'news': 'HERMES', 'weather': 'HERMES',
+    'screen': 'ARGUS',
+}
+
+
+def _broadcast_skill_log(skill: str | None, tool_name: str, result: object) -> None:
+    """Mirror a direct skill execution into its owner's agent terminal."""
+    agent = _AGENT_FOR_SKILL.get(skill or '')
+    if not agent:
+        return
+    try:
+        from ui.window import broadcast_agent_log
+        text = str(result or '')
+        broadcast_agent_log(agent, f"[{tool_name}] {text[:140]}", "success")
+    except Exception:
+        pass
+
+
 # Skills whose results should be remembered so follow-up questions work.
 # E.g., "AI news" → result → "tell me more about the first one" → LLM knows context.
-_CONTEXTUAL_SKILLS = {
-    'get_ai_news', 'get_tech_news', 'get_india_news', 'get_cricket_score',
+_CONTEXTUAL_SKILLS = {    'get_ai_news', 'get_tech_news', 'get_india_news', 'get_cricket_score',
     'get_headlines', 'get_news', 'morning_news_brief',
     'web_search', 'fetch_and_summarize',
     'get_weather', 'get_forecast',
@@ -597,10 +713,25 @@ def route(command: str, allow_llm: bool = True) -> Optional[str]:
     if confirm_result is not None:
         return confirm_result
 
+    # ── Step 1.4: Pending plan approval (Plan Mode) ──
+    try:
+        from pipeline.plan_executor import check_pending_plan
+        plan_result = check_pending_plan(cleaned, get_tool_map())
+        if plan_result is not None:
+            return humanize_response(plan_result)
+    except Exception as e:
+        logger.debug('Pending plan check skipped: %s', e)
+
     # ── Step 1.5: Workflow template matching ──
     workflow_result = _check_workflow(cleaned)
     if workflow_result is not None:
+        _broadcast_skill_log('chat', 'workflow', workflow_result)
         return workflow_result
+
+    # ── Step 1.6: Project workspace commands ──
+    project_result = _check_project_command(cleaned)
+    if project_result is not None:
+        return project_result
 
     # ── Step 1.7: Organizer pending confirmation ──
     # The organizer skill has its own yes/no flow (separate from dangerous tools).
@@ -672,6 +803,7 @@ def route(command: str, allow_llm: bool = True) -> Optional[str]:
                 result = run_analysis(active_file, cleaned)
                 response = humanize_response(result)
                 _inject_context(cleaned, result, 'analyze_data')
+                _broadcast_skill_log('data', 'analyze_data', result)
                 return response
     except ImportError:
         pass
@@ -730,6 +862,31 @@ def route(command: str, allow_llm: bool = True) -> Optional[str]:
                 if tool_name not in ('quick_analyze', 'analyze_data', 'chat', 'clear_chat_history'):
                     session_update('active_file', None)
 
+                # System tools run through TITAN so the swarm role is real:
+                # per-agent logs, UI attribution, and blackboard history.
+                if skill == 'sys':
+                    try:
+                        titan = _get_nexus().titan
+                    except Exception as e:
+                        logger.debug('TITAN unavailable, direct execution: %s', e)
+                        titan = None
+                    if titan is not None:
+                        session_update('active_agent', 'TITAN')
+                        try:
+                            bb_msg = titan.execute(
+                                cleaned, {"tool_name": tool_name, "tool_args": args})
+                            payload = bb_msg.payload or {}
+                            result = payload.get('result', '')
+                            if bb_msg.status == 'error' or 'error' in payload:
+                                return 'Sorry boss, I ran into a problem while executing that command.'
+                            response = humanize_response(result)
+                            _inject_context(cleaned, result, tool_name)
+                            return response
+                        except Exception as e:
+                            logger.error('TITAN execution failed for %s: %s', tool_name, e, exc_info=True)
+                            return 'Sorry boss, I ran into a problem while executing that command.'
+                    # else: fall through to direct execution below
+
                 result = tool_fn(**args)
                 response = humanize_response(result)
 
@@ -737,11 +894,12 @@ def route(command: str, allow_llm: bool = True) -> Optional[str]:
                 # This enables: "AI news" → [headlines] → "tell me more about #1"
                 # Without this, the LLM has no idea what DNA just said.
                 _inject_context(cleaned, result, tool_name)
+                _broadcast_skill_log(skill, tool_name, result)
 
                 return response
             except Exception as e:
                 logger.error('Regex tool execution failed for %s: %s', tool_name, e, exc_info=True)
-                return 'Sorry sir, I ran into a problem while executing that command.'
+                return 'Sorry boss, I ran into a problem while executing that command.'
 
     # ── Step 3: LLM fallback ──
     logger.info('No simple intent matched for Category A command: "%s". Falling back to NEXUS.', cleaned)

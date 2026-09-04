@@ -23,26 +23,43 @@ class DataProfiler:
         self._cached_excel_df = None  # Cache to avoid loading Excel twice
         self.query_log = []
 
-    def profile(self, path: str) -> dict:
+    def profile(self, path: str, sheet: str | int | None = None) -> dict:
         """Generate full statistical profile. Returns structured dict."""
         self.query_log = []
         con = duckdb.connect()
         self.con = con
         try:
 
-            # Check if file is Excel
-            is_excel = path.lower().endswith(('.xlsx', '.xls'))
-            
+            # Check file kind: Excel, Parquet, or CSV
+            lower_path = path.lower()
+            is_excel = lower_path.endswith(('.xlsx', '.xls'))
+            is_parquet = lower_path.endswith('.parquet')
+
+            # Sheet inventory for workbooks (metadata only — cheap, no data read).
+            # Analysis still loads ONE tab; silent single-tab analysis ends here.
+            sheets: list[str] = []
+            sheet_used = None
+            if is_excel:
+                try:
+                    sheets = [str(s) for s in pd.ExcelFile(path).sheet_names]
+                    sheet_used = sheet if sheet is not None else (sheets[0] if sheets else 0)
+                except Exception as e:
+                    logger.warning('Sheet inventory failed: %s', e)
+
             # Escape path single quotes for DuckDB
             escaped_path = path.replace("'", "''")
-            
+
             if is_excel:
                 logger.info('Excel file detected. Pre-loading with Pandas.')
-                df_excel = pd.read_excel(path)
+                df_excel = pd.read_excel(path, sheet_name=sheet_used if sheet_used is not None else 0)
                 self._cached_excel_df = df_excel  # Cache for reuse in _load_full/_load_sample
                 con.register('data_table', df_excel)
                 table_ref = 'data_table'
                 row_count = len(df_excel)
+            elif is_parquet:
+                logger.info('Parquet file detected. Querying natively with DuckDB.')
+                table_ref = f"read_parquet('{escaped_path}')"
+                row_count = self._count_rows(con, table_ref)
             else:
                 try:
                     table_ref = f"read_csv_auto('{escaped_path}')"
@@ -98,6 +115,8 @@ class DataProfiler:
                 'quality_score': quality_score,
                 'size_strategy': strategy,
                 'domain_aggregations': domain_aggregations,
+                'sheets': sheets,
+                'sheet_used': sheet_used,
             }
 
             # Run target breakdowns if target column exists
@@ -185,6 +204,8 @@ class DataProfiler:
             if self._cached_excel_df is not None:
                 return self._cached_excel_df
             return pd.read_excel(path)
+        elif path.lower().endswith('.parquet'):
+            return pd.read_parquet(path)
         else:
             return pd.read_csv(path, encoding='unicode_escape')
 
@@ -193,6 +214,10 @@ class DataProfiler:
         if is_excel:
             df = self._cached_excel_df if self._cached_excel_df is not None else pd.read_excel(path)
             return df.sample(n=min(len(df), self.SAMPLE_SIZE), random_state=42)
+        elif path.lower().endswith('.parquet'):
+            escaped_path = path.replace("'", "''")
+            table_ref = f"read_parquet('{escaped_path}')"
+            return con.execute(f"SELECT * FROM {table_ref} USING SAMPLE {self.SAMPLE_SIZE}").fetchdf()
         else:
             escaped_path = path.replace("'", "''")
             table_ref = f"read_csv_auto('{escaped_path}')"

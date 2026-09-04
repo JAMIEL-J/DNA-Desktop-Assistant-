@@ -16,7 +16,7 @@ def _clean_keyword(raw_keyword: str) -> str:
     kw = raw_keyword.lower().strip()
     stopwords = [
         'load', 'the', 'my', 'data', 'dataset', 'file', 'csv', 'excel',
-        'please', 'hey', 'jarvis', 'open', 'use', 'bring', 'up', 'a'
+        'parquet', 'please', 'hey', 'jarvis', 'open', 'use', 'bring', 'up', 'a'
     ]
     words = kw.split()
     filtered = [w for w in words if w not in stopwords]
@@ -44,7 +44,7 @@ def find_best_matching_dataset(keyword: str) -> Optional[Path]:
         Path.home() / 'Desktop'
     ]
 
-    valid_exts = {'.csv', '.xlsx', '.xls'}
+    valid_exts = {'.csv', '.xlsx', '.xls', '.parquet'}
     all_files: List[Path] = []
     for s_dir in search_dirs:
         if s_dir.exists():
@@ -90,7 +90,7 @@ def load_dataset_by_keyword(keyword: str) -> str:
     matched_path = find_best_matching_dataset(keyword)
 
     if not matched_path or not matched_path.exists():
-        msg = f"Sorry sir, I couldn't find any dataset matching '{keyword}' in your data directory or workspace."
+        msg = f"Sorry boss, I couldn't find any dataset matching '{keyword}' in your data directory or workspace."
         logger.warning(msg)
         return msg
 
@@ -112,12 +112,12 @@ def load_dataset_by_keyword(keyword: str) -> str:
 
     # Speak verbal confirmation
     verbal_msg = (
-        f"Yes sir. The {dataset_name} dataset is loaded and ready for analysis with "
+        f"Yes boss. The {dataset_name} dataset is loaded and ready for analysis with "
         f"{row_count:,} rows and {col_count} columns. What would you like to explore?"
     )
     try:
         from pipeline.tts import speak
-        speak(f"Yes sir, {dataset_name} dataset loaded.")
+        speak(f"Yes boss, {dataset_name} dataset loaded.")
     except Exception as e:
         logger.debug("TTS speak failed: %s", e)
 

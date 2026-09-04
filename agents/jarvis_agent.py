@@ -26,10 +26,12 @@ class JarvisAgent(AgentBase):
         start_time = time.perf_counter()
 
         logger.info("[%s] Processing query: %r", self.agent_id, task)
+        self.log_event(f"Processing query: '{task}'", "info")
 
         try:
             # Delegate to conversational chat skill engine
             answer = chat(task)
+            self.log_event(f"Reply ready: {str(answer)[:120]}...", "success")
 
             latency_ms = int((time.perf_counter() - start_time) * 1000)
             payload = {

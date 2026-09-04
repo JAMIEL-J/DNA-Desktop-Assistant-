@@ -48,7 +48,7 @@ class AgentBase(ABC):
 
         try:
             from ui.window import broadcast_agent_log
-            broadcast_agent_log(self.name, message, level)
+            broadcast_agent_log(self.agent_id, message, level)
         except Exception:
             pass
 

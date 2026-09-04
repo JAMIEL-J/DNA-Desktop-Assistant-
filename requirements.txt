@@ -27,6 +27,18 @@ google-genai>=1.34.0
 PySide6>=6.7.0
 PySide6-WebEngine>=6.7.0
 websockets>=12.0
+feedparser>=6.0.0
+beautifulsoup4>=4.12.0
+openpyxl>=3.1.0
+
+# Tray / Toast (used by ui/tray.py, ui/toast.py)
+pystray>=0.19.0
+Pillow>=10.0.0
+plyer>=2.1.0
+
+# Job integrations (used by skills/apify_job_skill.py, composio_job_skill.py)
+apify-client>=1.0.0
+composio-core>=0.5.0
 
 # TTS (Piper is handled via Python wrapper)
 piper-tts>=1.2.0

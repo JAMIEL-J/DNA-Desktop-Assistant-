@@ -6,12 +6,18 @@ import json
 import logging
 import os
 import string
+import time
 from pathlib import Path
 import sqlite3
 
 from config import DB_PATH, FOLDER_ALIASES
 
 logger = logging.getLogger('dna.data_engine.catalog')
+
+# TTL cache for drive-heavy file search — previously every find_dataset call
+# walked all A-Z drive roots depth-2 synchronously in the voice loop (10s+ hang).
+_SEARCH_CACHE: dict = {"ts": 0.0, "candidates": []}
+_SEARCH_CACHE_TTL = 6 * 3600  # 6 hours
 
 
 def _compute_md5(path: str) -> str:
@@ -234,12 +240,21 @@ class DataCatalog:
             return []
 
     def _search_data_files(self, keyword: str = "") -> list[Path]:
-        """Search common folders AND all drive roots for CSV/Excel files matching a keyword."""
-        valid_exts = {'.csv', '.xlsx', '.xls'}
+        """Search common folders for CSV/Excel/Parquet files matching a keyword.
+
+        Drive-root walk is opt-in via DNA_ENABLE_DRIVE_SCAN=1 (default off)
+        and results are cached 6h to avoid blocking the voice loop.
+        """
+        global _SEARCH_CACHE
+        valid_exts = {'.csv', '.xlsx', '.xls', '.parquet'}
+
+        now = time.time()
+        if _SEARCH_CACHE["candidates"] and (now - _SEARCH_CACHE["ts"]) < _SEARCH_CACHE_TTL and not keyword:
+            return list(_SEARCH_CACHE["candidates"][:5])
         candidates = []
         seen = set()
 
-        # Build scan list: configured folders + all drive roots
+        # Build scan list: configured folders + project data (+ opt-in drive roots)
         scan_dirs = []
 
         # 1. Configured folder aliases
@@ -253,11 +268,13 @@ class DataCatalog:
         if project_data.exists():
             scan_dirs.append((project_data, 1))
 
-        # 3. All available drive roots (C:\, D:\, E:\, etc.) — scan 2 levels deep
-        for letter in string.ascii_uppercase:
-            drive = Path(f'{letter}:\\')
-            if drive.exists():
-                scan_dirs.append((drive, 2))
+        # 3. Opt-in: all available drive roots (C:\, D:\, E:\, etc.) — scan 2 levels deep
+        # Previously always-on: caused multi-second hang on HDD on every lookup.
+        if os.getenv('DNA_ENABLE_DRIVE_SCAN', '0').strip().lower() in {'1', 'true', 'yes', 'on'}:
+            for letter in string.ascii_uppercase:
+                drive = Path(f'{letter}:\\')
+                if drive.exists():
+                    scan_dirs.append((drive, 2))
 
         def _scan(folder: Path, max_depth: int, current_depth: int = 0):
             if current_depth > max_depth:
@@ -304,6 +321,10 @@ class DataCatalog:
             scored.sort(key=lambda x: x[0])
             return [f for _, f in scored]
         else:
-            # No keyword — return most recent files
-            candidates.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+            # No keyword — return most recent files + refresh TTL cache
+            try:
+                candidates.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+            except OSError:
+                pass
+            _SEARCH_CACHE = {"ts": time.time(), "candidates": list(candidates[:5])}
             return candidates[:5]

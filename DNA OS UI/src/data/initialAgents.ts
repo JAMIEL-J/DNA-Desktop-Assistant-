@@ -287,15 +287,61 @@ export const INITIAL_AGENTS: AgentProcess[] = [
       ioRate: [0],
       networkRate: [0]
     }
+  },
+  {
+    id: 'agent-vanguard-07',
+    pid: 9007,
+    name: 'VANGUARD',
+    role: 'Developer',
+    color: 'text-teal-400',
+    borderHex: '#2dd4b6',
+    status: 'Waiting',
+    activeTask: 'File & Storage Operator Ready',
+    runtimeSeconds: 0,
+    cpuUsagePercent: 0.1,
+    memoryUsageMb: 90,
+    activeTab: 'Terminal',
+    isMinimized: false,
+    isMaximized: false,
+    isFloating: false,
+    isPinned: false,
+    logs: [
+      { id: 'log-v-1', timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }), message: 'VANGUARD Storage agent online. File operations ready.', level: 'system' },
+      { id: 'log-v-2', timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }), message: 'Status: READY / Standby.', level: 'info' }
+    ],
+    timeline: [],
+    memory: [],
+    files: [],
+    conversations: [],
+    dependencyNodes: [],
+    transparency: {
+      whatHappened: 'Storage agent initialized.',
+      whyItHappened: 'Boot check.',
+      inputPayload: 'NONE',
+      outputResult: 'READY',
+      reasoningSummary: ['Folder index ready'],
+      dependencies: ['file_skill'],
+      confidenceScore: 100.0,
+      executionDurationMs: 0,
+      modelUsed: 'system-native',
+      tokensConsumed: 0
+    },
+    metricsHistory: {
+      timestamps: ['00:00'],
+      cpuUsage: [0.1],
+      memoryUsage: [90],
+      ioRate: [0],
+      networkRate: [0]
+    }
   }
 ];
 
 export const INITIAL_PRESETS = [
   {
     id: 'preset-dna-swarm',
-    name: 'Full 6-Agent DNA Swarm',
-    description: '3-Column dense view showing active DNA Swarm specialists (NEXUS, CIPHER, FORGE, ARGUS, HERMES, TITAN)',
+    name: 'Full 7-Agent DNA Swarm',
+    description: '3-Column dense view showing active DNA Swarm specialists (JARVIS, CIPHER, FORGE, ARGUS, HERMES, TITAN, VANGUARD)',
     layout: '3_COLUMN' as const,
-    agentIds: ['agent-nexus-01', 'agent-cipher-02', 'agent-forge-03', 'agent-argus-04', 'agent-hermes-05', 'agent-titan-06']
+    agentIds: ['agent-nexus-01', 'agent-cipher-02', 'agent-forge-03', 'agent-argus-04', 'agent-hermes-05', 'agent-titan-06', 'agent-vanguard-07']
   }
 ];
