@@ -4,6 +4,7 @@ import time
 import uuid
 import json
 from datetime import datetime
+from typing import Optional
 from core.agent_base import AgentBase, AgentState
 from core.blackboard import Blackboard, BlackboardMessage
 from pipeline.llm_agent import handle_complex_command
@@ -20,7 +21,7 @@ from agents.forge_agent import ForgeAgent
 logger = logging.getLogger('dna.nexus')
 
 class NexusOrchestrator(AgentBase):
-    def __init__(self, blackboard: Blackboard = None):
+    def __init__(self, blackboard: Optional[Blackboard] = None):
         if blackboard is None:
             from core.blackboard import get_global_blackboard
             blackboard = get_global_blackboard()
@@ -78,7 +79,7 @@ class NexusOrchestrator(AgentBase):
             ctx["tool_args"] = args
         return ctx
 
-    def execute(self, task: str, context: dict = None) -> BlackboardMessage:
+    def execute(self, task: str, context: dict | None = None) -> BlackboardMessage:
         self.transition(AgentState.BUSY)
         task_id = (context or {}).get("task_id") or f"task_{uuid.uuid4().hex[:8]}"
         start_time = time.perf_counter()
