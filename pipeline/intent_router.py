@@ -228,8 +228,8 @@ SIMPLE_INTENTS = [
     (re.compile(r'\b(?:job\s+search|search\s+jobs?)\s+(?:for\s+)?(?:ml|machine\s+learning)\b', re.I),
      'enter_job_search_mode', lambda m: {'role': 'ml engineer'}),
     # Role within generic phrasing (e.g. "find data analyst jobs")
-    (re.compile(r'\b(?:find|get|show|look\s+for)\s+(?:data\s+analyst|data\s+scientist|business\s+analyst|data\s+engineer|ml\s+engineer)\s+(?:jobs?|openings?|roles?)\b', re.I),
-     'enter_job_search_mode', lambda m: {'role': re.search(r'(data\s+analyst|data\s+scientist|business\s+analyst|data\s+engineer|ml\s+engineer)', m.group(0), re.I).group(1).lower()}),
+    (re.compile(r'\b(?:find|get|show|look\s+for)\s+(data\s+analyst|data\s+scientist|business\s+analyst|data\s+engineer|ml\s+engineer)\s+(?:jobs?|openings?|roles?)\b', re.I),
+     'enter_job_search_mode', lambda m: {'role': m.group(1).lower()}),
     # Generic job triggers via natural speech
     (re.compile(r'\b(?:show|find|get|check|are there|any)\b.+\b(?:jobs?|openings?|vacancies|hiring|positions?)\b', re.I),
      'enter_job_search_mode', lambda m: {}),
