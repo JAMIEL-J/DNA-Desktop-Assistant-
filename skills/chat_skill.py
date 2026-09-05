@@ -43,7 +43,7 @@ SYSTEM_PROMPT = (
     "2. Be informative, accurate, and concise. No bullet points, no markdown, no formatting.\n"
     "3. Use natural phrasing suitable for voice output.\n"
     "4. If you truly don't know, say so honestly rather than guessing.\n"
-    "5. Address the user as 'sir' occasionally for a respectful butler tone.\n"
+    "5. Address the user as 'boss' for a respectful butler tone.\n"
     "6. For follow-up questions, use the conversation history for context.\n"
     "7. Never start with 'Sure!' or 'Great question!' — just answer directly.\n"
     "8. Do NOT use asterisks, hashtags, backticks, or any markdown.\n"
@@ -243,14 +243,33 @@ def chat(question: str = '') -> str:
         history = _get_history()
         _add_to_history('user', question)
 
+        # NIM Ultra first (JARVIS assignment), then existing chain.
+        # Any NIM failure falls straight through — never blocks the answer.
+        answer = ""
+        try:
+            from config import AGENT_MODELS
+            from pipeline.nim_client import call_nim
+            spec = (AGENT_MODELS or {}).get('jarvis')
+            if spec:
+                messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+                if memory_context:
+                    messages.append({"role": "system", "content": f"Context:\n{memory_context}"})
+                messages.extend(history[-6:])
+                messages.append({"role": "user", "content": question})
+                answer = call_nim(spec['model'], messages, temperature=0.7,
+                                  max_tokens=512, timeout=30)
+        except Exception as e:
+            logger.warning('NIM chat failed, cascading: %s', e)
+            answer = ""
+
         # Cloud-first, local fallback
-        if GOOGLE_API_KEY:
+        if not answer and GOOGLE_API_KEY:
             try:
                 answer = _call_google_chat(question, history, memory_context)
             except Exception as e:
                 logger.error('Google chat failed: %s. Falling back to Ollama.', e)
-                answer = _call_ollama_chat(question, history, memory_context)
-        else:
+                answer = ""
+        if not answer:
             answer = _call_ollama_chat(question, history, memory_context)
 
         answer = _clean_answer(answer)

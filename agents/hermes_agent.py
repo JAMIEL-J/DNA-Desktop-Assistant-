@@ -26,7 +26,7 @@ _AUTOMATION_KEYWORDS = (
 class HermesAgent(AgentBase):
     """HERMES — Web & Browser Agent.
     
-    Model Assignment: NVIDIA Nemotron (Secondary API Key — Tool Calling Specialist).
+    Model Assignment: Gemini Flash Lite summaries (+ Playwright browser).
     Responsibilities: Web searches, page scraping, tool calling, online intelligence.
     """
     def __init__(self, blackboard: Blackboard):

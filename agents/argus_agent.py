@@ -19,7 +19,7 @@ logger = logging.getLogger('dna.agent.argus')
 class ArgusAgent(AgentBase):
     """ARGUS — Vision & Screen Agent.
     
-    Model Assignment: Nemotron 3 Ultra (via NVIDIA NIM) / Moondream local fallback.
+    Model Assignment: Gemini Flash Lite vision / Moondream local fallback.
     Responsibilities: Screen OCR, active window UI inspection, visual error debugging.
     """
     def __init__(self, blackboard: Blackboard):

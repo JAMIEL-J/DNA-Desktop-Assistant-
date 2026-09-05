@@ -308,11 +308,48 @@ def _call_llm(command: str, tool_names: list[str]) -> dict[str, Any]:
 
 
 
-def handle_complex_command(command: str, tool_map: dict[str, Any]) -> str:
+def _try_nim_tool_decision(command: str, tool_names: list[str]) -> dict | None:
+    """NEXUS fast path: Nemotron Lightning first, Glimmer second.
+
+    Returns a validated tool decision dict, or None on any failure so the
+    caller falls through to the existing Google→Ollama chain. Only real,
+    available tools are accepted (clarify/unknown defer to the main chain).
+    """
+    try:
+        from config import AGENT_MODELS
+        from pipeline.nim_client import call_nim
+    except Exception as e:
+        logger.debug('NIM unavailable: %s', e)
+        return None
+    for slot in ('nexus', 'nim_fallback'):
+        spec = (AGENT_MODELS or {}).get(slot)
+        if not spec:
+            continue
+        try:
+            content = call_nim(spec['model'], [
+                {"role": "system", "content": _build_system_prompt(tool_names)},
+                {"role": "user", "content": command},
+            ], temperature=0.0, max_tokens=1024)
+            decision = _parse_llm_json(content)
+            tool = str((decision or {}).get('tool', '')).strip()
+            if tool and tool in tool_names:
+                logger.info('NIM %s selected tool: %s', spec['model'], tool)
+                return decision
+        except Exception as e:
+            logger.warning('NIM %s failed, cascading: %s', spec.get('model'), e)
+            continue
+    return None
+
+
+def handle_complex_command(command: str, tool_map: dict[str, Any], agent: str | None = None) -> str:
     """Route non-regex commands through LLM and execute chosen tool(s)."""
     try:
         tool_names = list(tool_map.keys())
-        decision = _call_llm(command, tool_names)
+        decision = None
+        if agent == 'nexus':
+            decision = _try_nim_tool_decision(command, tool_names)
+        if decision is None:
+            decision = _call_llm(command, tool_names)
 
         if 'plan' in decision and isinstance(decision['plan'], list):
             plan = decision['plan']

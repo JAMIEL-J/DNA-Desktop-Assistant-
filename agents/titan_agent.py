@@ -13,7 +13,7 @@ logger = logging.getLogger('dna.agent.titan')
 class TitanAgent(AgentBase):
     """TITAN — System Control Agent.
     
-    Model Assignment: Mistral Nemotron (fuzzy resolver) / Direct Python.
+    Model Assignment: none — deterministic direct execution (fuzzy cases escalate to NEXUS).
     Responsibilities: OS volume, brightness, power controls, window execution.
     """
     def __init__(self, blackboard: Blackboard):

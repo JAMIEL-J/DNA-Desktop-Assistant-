@@ -19,7 +19,7 @@ logger = logging.getLogger('dna.agent.vanguard')
 class VanguardAgent(AgentBase):
     """VANGUARD — File & Storage Agent.
     
-    Model Assignment: Mistral Nemotron (fuzzy resolver) / Direct Python.
+    Model Assignment: none — deterministic direct execution.
     Responsibilities: File system operations, download organization, workspace indexing.
     """
     def __init__(self, blackboard: Blackboard):

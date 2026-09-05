@@ -10,7 +10,7 @@ logger = logging.getLogger('dna.agent.jarvis')
 class JarvisAgent(AgentBase):
     """JARVIS — Conversational & Persona Agent.
     
-    Model Assignment: Gemini 3.5 Flash-Lite (Primary) / OpenRouter Gemma 4 fallback.
+    Model Assignment: Nemotron 3 Ultra (primary) / Gemini / Ollama cascade.
     Responsibilities: Conversational Q&A, multi-turn follow-ups, voice summaries.
     """
     def __init__(self, blackboard: Blackboard):

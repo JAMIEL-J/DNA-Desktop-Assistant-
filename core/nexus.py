@@ -193,7 +193,7 @@ class NexusOrchestrator(AgentBase):
                 result = msg.payload.get("result", "")
             elif result is None:
                 tool_map = get_tool_map()
-                result = handle_complex_command(task, tool_map)
+                result = handle_complex_command(task, tool_map, agent="nexus")
             
             # Update session state with active sub-agent for UI attribution
             try:

@@ -10,7 +10,7 @@ logger = logging.getLogger('dna.agent.cipher')
 class CipherAgent(AgentBase):
     """CIPHER — Data Analyst Agent.
     
-    Model Assignment: DeepSeek V4 Flash (via NVIDIA NIM) / OpenRouter fallback.
+    Model Assignment: Gemini Flash Lite (primary, multimodal) / OpenRouter fallback.
     Design Rule: Compute-Then-Narrate (DuckDB aggregation before LLM analysis).
     Responsibilities: SQL execution, dataset profiling, analytical reports.
     """
