@@ -93,6 +93,27 @@ OLLAMA_CTX_THINKING = int(os.getenv('OLLAMA_CTX_THINKING', '2048'))
 OLLAMA_TEMPERATURE = float(os.getenv('OLLAMA_TEMPERATURE', '0.2'))
 OLLAMA_KEEP_ALIVE = os.getenv('OLLAMA_KEEP_ALIVE', '1m')
 
+# NVIDIA NIM (free prototyping tier, OpenAI-compatible).
+# Two keys rotate against the shared ~40 RPM account throttle.
+NVIDIA_API_KEYS = [k for k in (
+    os.getenv('NVIDIA_API_KEY_1', ''),
+    os.getenv('NVIDIA_API_KEY_2', ''),
+    os.getenv('NVIDIA_API_KEY', ''),
+) if k]
+NIM_URL = os.getenv('NIM_URL', 'https://integrate.api.nvidia.com/v1/chat/completions')
+NIM_TIMEOUT = float(os.getenv('NIM_TIMEOUT', '30'))
+NIM_MODEL_LIGHTNING = os.getenv('NIM_MODEL_LIGHTNING', 'nvidia/nemotron-3.5-lightning-30b-a3b')
+NIM_MODEL_ULTRA = os.getenv('NIM_MODEL_ULTRA', 'nvidia/nemotron-3-ultra-550b-a55b')
+NIM_MODEL_GLIMMER = os.getenv('NIM_MODEL_GLIMMER', 'meta/muse-glimmer-30b')
+
+# Per-agent model assignment (locked 2026-09-04; DeepSeek cut, user call).
+# TITAN/VANGUARD intentionally absent: deterministic, no model.
+AGENT_MODELS = {
+    'nexus': {'provider': 'nim', 'model': NIM_MODEL_LIGHTNING, 'thinking': False},
+    'jarvis': {'provider': 'nim', 'model': NIM_MODEL_ULTRA, 'thinking': True},
+    'nim_fallback': {'provider': 'nim', 'model': NIM_MODEL_GLIMMER, 'thinking': True},
+}
+
 # Career-Ops Settings
 CAREER_OPS_DIR = str(BASE_DIR / 'Job Search skill' / 'career-ops')
 CAREER_OPS_NODE_PATH = 'node' # Assumes node is in PATH
